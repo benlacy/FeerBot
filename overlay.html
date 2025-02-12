@@ -1,0 +1,107 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Overlay</title>
+    <style>
+        body {
+            background: transparent; /* Makes the background see-through */
+            color: white;
+            font-size: 30px;
+            text-align: left;
+        }
+        #message {
+            animation: fadeIn 1s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="message">Welcome to the Stream!</div>
+
+    <script>
+        const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+
+        ws.onopen = function () {
+            ws.send("PASS oauth:qiotykl2xwj8wdkoco2wan0kq9rhcb");
+            ws.send("NICK Feer");
+            ws.send("JOIN #Feer");
+        };
+
+        ws.onmessage = function (event) {
+            let message = event.data;
+            if (message.includes("PRIVMSG")) {
+                let chatMessage = message.split("PRIVMSG")[1].split(":")[1];
+                document.getElementById('message').innerText = chatMessage;
+            }
+        };
+    </script>
+</body>
+</html> -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Overlay</title>
+    <style>
+        body {
+            background: transparent; /* Makes the background see-through */
+            color: white;
+            font-size: 30px;
+            text-align: left;
+            font-family: Arial, sans-serif;
+        }
+        #chat-box {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            border-radius: 10px;
+            max-height: 200px;
+            overflow: hidden;
+        }
+        .message {
+            margin: 5px 0;
+            opacity: 1;
+            transition: opacity 1s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="chat-box"></div>
+
+    <script>
+        const chatBox = document.getElementById("chat-box");
+
+        // Connect to the WebSocket server
+        const socket = new WebSocket("ws://localhost:6790");
+
+        socket.onmessage = function(event) {
+            let message = event.data;
+            console.log("New message:", message);
+            
+            let messageDiv = document.createElement("div");
+            messageDiv.classList.add("message");
+            messageDiv.innerText = message;
+
+            chatBox.appendChild(messageDiv);
+
+            // Auto-remove old messages after 10 seconds
+            setTimeout(() => {
+                messageDiv.style.opacity = "0";
+                setTimeout(() => chatBox.removeChild(messageDiv), 1000);
+            }, 10000);
+        };
+    </script>
+
+</body>
+</html>
