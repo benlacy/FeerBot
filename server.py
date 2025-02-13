@@ -11,6 +11,12 @@ async def handler(websocket):
         async for message in websocket:
             print(f"Received: {message}")
             await broadcast(message)
+    except websockets.exceptions.ConnectionClosedError:
+        print("Client disconnected unexpectedly.")
+    except websockets.exceptions.ConnectionClosedOK:
+        print("Client disconnected normally.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
     finally:
         connected_clients.remove(websocket)
 
