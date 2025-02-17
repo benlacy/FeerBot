@@ -68,16 +68,17 @@ class Bot(commands.Bot):
             print(f'(not a quick chat):{message.content}')
             return
 
-        chat_message = f'{message.author.mention[1:]}: {quick_chat_messages[index]}'  # Prints messages to the console
+        chat_message = f'{message.author.display_name}: {quick_chat_messages[index]}'  # Prints messages to the console
         print(chat_message)
-        formatted_chat_message = f'<span class="username">{message.author.mention[1:]}</span>: <span class="message-text">{quick_chat_messages[index]}</span>' 
+        formatted_chat_message = f'<span class="username"style="color: {message.author.color};">{message.author.display_name}</span>: <span class="message-text">{quick_chat_messages[index]}</span>' 
         #if message.content == "You have time!":
             # Send the chat message to the WebSocket overlay
         # time.sleep(2)  # Give time to switch to another window
 
         # keyboard.press_and_release("1")
         # keyboard.press_and_release("1")
-        await self.send_to_overlay(formatted_chat_message)
+        for _ in range(1):
+            await self.send_to_overlay(formatted_chat_message)
 
     async def connect_websocket(self):
         """Maintains a persistent WebSocket connection."""
