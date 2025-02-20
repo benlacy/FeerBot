@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Overlay</title>
+    <style>
+        body {
+            background: transparent;
+            color: white;
+            font-size: 72px;
+            text-align: left;
+            font-family: Roboto, sans-serif;
+            overflow: hidden;
+        }
+        #chat-box {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 95%;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .message {
+            margin: 5px 0;
+            font-weight: 700; 
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 1);
+            white-space: nowrap;
+        }
+        .username {
+            color: #bd91ff;
+            font-weight: bold;
+        }
+        .message-text {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-box"></div>
+    <script>
+        const chatBox = document.getElementById("chat-box");
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                let message = event.data;
+                console.log("New message:", message);
+                
+                let messageDiv = document.createElement("div");
+                messageDiv.classList.add("message");
+                messageDiv.innerHTML = message;
+
+                chatBox.appendChild(messageDiv);
+                chatBox.scrollTop = chatBox.scrollHeight; // Ensures scrolling continues as new messages arrive
+
+                // Ensure older messages are removed to keep performance optimal
+                if (chatBox.children.length > 4) { // Adjust limit as needed
+                    chatBox.removeChild(chatBox.firstChild);
+                }
+
+                // Auto-remove old messages after 10 seconds
+                setTimeout(() => {
+                    messageDiv.style.opacity = "0";
+                    setTimeout(() => chatBox.removeChild(messageDiv), 1000);
+                }, 30000);
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+    </script>
+</body>
+</html>
