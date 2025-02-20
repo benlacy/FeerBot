@@ -26,7 +26,7 @@ PREFIX = '!'
 CHANNELS = [CHANNEL_NAME]
 
 quick_chat_messages = [
-    "$HJ@%!", "All yours.", "Bumping!", "Calculated.", "Centering!", "Close one!",
+    "$H@%!", "All yours.", "Bumping!", "Calculated.", "Centering!", "Close one!",
     "Defending...", "Everybody Dance!", "Faking.", "gg", "Go for it!", "Good luck!",
     "Great clear!", "Great pass!", "Holy cow!", "Here. We. Go.", "Have fun!",
     "I got it!", "In position.", "I'll do my best.", "Incoming!", "Let's do this!",
@@ -48,6 +48,8 @@ normalized_map = {normalize(msg): i for i, msg in enumerate(quick_chat_messages)
 
 # Function to check if input matches a Quick Chat and get its index
 def get_quick_chat_index(user_input):
+
+
     normalized_input = normalize(user_input)
     return normalized_map.get(normalized_input, -1)  # Returns -1 if not found
 
