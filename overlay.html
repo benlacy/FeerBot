@@ -48,40 +48,57 @@
     <script>
         const chatBox = document.getElementById("chat-box");
 
-        // Connect to the WebSocket server
-        const socket = new WebSocket("ws://localhost:6790");
+        let socket;
 
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
 
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
 
-        socket.onmessage = function(event) {
-            let message = event.data;
-            console.log("New message:", message);
-            
-            // Play the sound every time a message is received
-            // Create an audio object for sound
-            const messageSound = new Audio('quickchat.mp3'); // Replace with your sound file path
-            messageSound.play();  // Play the sound
+            socket.onmessage = function(event) {
+                let message = event.data;
+                console.log("New message:", message);
 
-            let messageDiv = document.createElement("div");
-            messageDiv.classList.add("message");
-            messageDiv.innerHTML = message;
+                // Play the sound every time a message is received
+                const messageSound = new Audio('quickchat.mp3'); // Replace with your sound file path
+                messageSound.play();  // Play the sound
 
-            // Set random position
-            let randomTop = Math.floor(Math.random() * window.innerHeight * 0.8); // Keep within bounds
-            let randomLeft = Math.floor(Math.random() * window.innerWidth * 0.7);
+                let messageDiv = document.createElement("div");
+                messageDiv.classList.add("message");
+                messageDiv.innerHTML = message;
 
-            messageDiv.style.position = "absolute"; 
-            messageDiv.style.top = `${randomTop}px`;
-            messageDiv.style.left = `${randomLeft}px`;
+                // Set random position
+                let randomTop = Math.floor(Math.random() * window.innerHeight * 0.8); // Keep within bounds
+                let randomLeft = Math.floor(Math.random() * window.innerWidth * 0.7);
 
-            chatBox.appendChild(messageDiv);
+                messageDiv.style.position = "absolute"; 
+                messageDiv.style.top = `${randomTop}px`;
+                messageDiv.style.left = `${randomLeft}px`;
 
-            // Auto-remove old messages after 10 seconds
-            setTimeout(() => {
-                messageDiv.style.opacity = "0";
-                setTimeout(() => chatBox.removeChild(messageDiv), 1000);
-            }, 5000);
-        };
+                chatBox.appendChild(messageDiv);
+
+                // Auto-remove old messages after 10 seconds
+                setTimeout(() => {
+                    messageDiv.style.opacity = "0";
+                    setTimeout(() => chatBox.removeChild(messageDiv), 1000);
+                }, 5000);
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
     </script>
 
 </body>

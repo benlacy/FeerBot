@@ -6,19 +6,24 @@ from twitchio.ext import commands
 import keyboard
 import time
 import re
+import requests
 
 # WebSocket Server URL (to send messages to the overlay)
 OVERLAY_WS = "ws://localhost:6790"
 
 # Replace with your bot's details
 TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
-if TOKEN == None:
+CLIENT_ID = os.getenv("TWITCH_APP_CLIENT_ID")  # Add this to your environment variables
+CLIENT_SECRET = os.getenv("TWITCH_APP_CLIENT_SECRET")
+CHANNEL_NAME = "Feer"
+
+if not TOKEN or not CLIENT_ID or not CLIENT_SECRET:
     print("FATAL ERROR: TOKEN ENV NOT SET")
     exit()
 
 # NICK = 'FeerBot'
 PREFIX = '!'
-CHANNELS = ['Feer']
+CHANNELS = [CHANNEL_NAME]
 
 quick_chat_messages = [
     "$HJ@%!", "All yours.", "Bumping!", "Calculated.", "Centering!", "Close one!",
@@ -54,10 +59,26 @@ class Bot(commands.Bot):
             initial_channels=CHANNELS
         )
         self.ws = None  # WebSocket connection placeholder
+        self.hype_train_level = 1
 
     async def event_ready(self):
         print(f'Logged in as {self.nick}')
-        asyncio.create_task(self.connect_websocket())  # Start WebSocket connection
+        # Start the background task for periodically checking Hype Train level
+        self.loop.create_task(self.update_hype_train_periodically())
+
+        await self.connect_websocket()  # Start WebSocket connection
+
+    async def update_hype_train_periodically(self):
+        """Periodically updates the stored Hype Train level to avoid delays in messages."""
+        wait_time = 30
+        while True:
+            self.hype_train_level = self.get_hype_train_level()
+            print(f"Updated Hype Train Level: {self.hype_train_level}")
+            if self.hype_train_level > 1:
+                wait_time = 5
+            else:
+                wait_time = 30
+            await asyncio.sleep(wait_time)  # Check every 30 seconds (adjust as needed)
 
     async def event_message(self, message):
         if message.echo:
@@ -71,13 +92,8 @@ class Bot(commands.Bot):
         chat_message = f'{message.author.display_name}: {quick_chat_messages[index]}'  # Prints messages to the console
         print(chat_message)
         formatted_chat_message = f'<span class="username"style="color: {message.author.color};">{message.author.display_name}</span>: <span class="message-text">{quick_chat_messages[index]}</span>' 
-        #if message.content == "You have time!":
-            # Send the chat message to the WebSocket overlay
-        # time.sleep(2)  # Give time to switch to another window
 
-        # keyboard.press_and_release("1")
-        # keyboard.press_and_release("1")
-        for _ in range(1):
+        for _ in range(self.hype_train_level):
             await self.send_to_overlay(formatted_chat_message)
 
     async def connect_websocket(self):
@@ -107,6 +123,39 @@ class Bot(commands.Bot):
             print("WebSocket not connected. Message not sent.")
             print("WebSocket closed. Reconnecting...")
             await self.connect_websocket()
+
+    def get_hype_train_level(self):
+        """Fetch the current Hype Train level using Twitch Helix API."""
+        url = f"https://api.twitch.tv/helix/hypetrain/events?broadcaster_id={self.get_broadcaster_id()}"
+        headers = {
+            "Client-ID": CLIENT_ID,
+            "Authorization": f"Bearer {TOKEN}"
+        }
+        try:
+            response = requests.get(url, headers=headers)
+            data = response.json()
+            if "data" in data and len(data["data"]) > 0:
+                return data["data"][0]["level"]
+        except Exception as e:
+            print(f"Error fetching Hype Train level: {e}")
+        return 1  # Default to 1 if there’s no active Hype Train
+
+    def get_broadcaster_id(self):
+        return '147306920' # Feer id, dont try and find it every time
+        # """Fetch the broadcaster ID for the channel."""
+        # url = f"https://api.twitch.tv/helix/users?login={CHANNEL_NAME}"
+        # headers = {
+        #     "Client-ID": CLIENT_ID,
+        #     "Authorization": f"Bearer {TOKEN}"
+        # }
+        # try:
+        #     response = requests.get(url, headers=headers)
+        #     data = response.json()
+        #     if "data" in data and len(data["data"]) > 0:
+        #         return data["data"][0]["id"]
+        # except Exception as e:
+        #     print(f"Error fetching broadcaster ID: {e}")
+        # return None
 
     # @commands.command(name='hello')
     # async def hello_command(self, ctx: commands.Context):
