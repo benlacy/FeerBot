@@ -66,7 +66,7 @@ class Bot(commands.Bot):
     async def event_ready(self):
         print(f'Logged in as {self.nick}')
         # Start the background task for periodically checking Hype Train level
-        self.loop.create_task(self.update_hype_train_periodically())
+        #self.loop.create_task(self.update_hype_train_periodically())
 
         await self.connect_websocket()  # Start WebSocket connection
 

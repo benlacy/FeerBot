@@ -28,7 +28,9 @@
             margin: 5px 0;
             font-weight: 700; 
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 1);
-            white-space: nowrap;
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word; /* Ensure long words break properly */
+            width: 100%; /* Take up full width of the chat-box */
         }
         .username {
             color: #bd91ff;
