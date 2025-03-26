@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progress Bar Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .overlay {
+            display: flex;
+            align-items: center;
+            width: 80%;
+            position: relative;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .progress-container {
+            flex-grow: 1;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            margin: 0 10px;
+        }
+        .progress-bar {
+            width: 50%;
+            height: 100%;
+            background: rgb(127, 127, 0);
+            transition: width 0.5s ease-in-out, background 0.5s ease-in-out;
+        }
+        .icon {
+            width: 50px;
+            height: 50px;
+            position: absolute;
+            top: 15px;
+        }
+        .left-icon {
+            left: 0;
+        }
+        .right-icon {
+            right: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="overlay" id="overlay">
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+            <img src="ICAN-4x.png" class="icon left-icon" alt="Left Icon">
+            <img src="ICANT-4x.png" class="icon right-icon" alt="Right Icon">
+        </div>
+    </div>
+
+    <script>
+        let inactivityTimer = null;
+
+        function updateProgress(value) {
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = value + '%';
+            
+            // Interpolating colors from red (low) to yellow (mid) to green (high)
+            let red = Math.max(255 - (value * 2.55), 0); // Red decreases as value increases
+            let green = Math.min(value * 2.55, 255); // Green increases as value increases
+            let color = `rgb(${red}, ${green}, 0)`;
+            
+            progressBar.style.background = color;
+        }
+        
+        function setOverlayOpacity(opacity) {
+            const overlay = document.getElementById('overlay');
+            overlay.style.opacity = opacity;
+        }
+
+        function resetInactivityTimer() {
+            // If a timer exists, clear it
+            if (inactivityTimer) {
+                console.log("Clearing previous inactivity timer...");
+                clearTimeout(inactivityTimer);
+            }
+
+            // Set a new timer to hide the overlay if no message is received in 30 seconds
+            console.log("Setting new inactivity timer...");
+            inactivityTimer = setTimeout(function() {
+                console.log("No message received for 30 seconds. Hiding overlay.");
+                setOverlayOpacity(0);
+            }, 30000); // 30 seconds
+        }
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                let message = event.data;
+                console.log("New message:", message);
+
+                updateProgress(message);
+                setOverlayOpacity(1);
+                // setOverlayOpacity(0);
+
+                // Reset the inactivity timer whenever a message is received
+                resetInactivityTimer();
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+    </script>
+</body>
+</html>
