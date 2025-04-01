@@ -34,6 +34,27 @@
             height: 100%;
             background: rgb(117, 76, 72);
             transition: width 0.5s ease-in-out, background 0.5s ease-in-out;
+            position: relative;
+        }
+        .ticker {
+            position: absolute;
+            width: 200%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            display: none;
+            background-size: contain;
+            animation: ticker-scroll 5s linear infinite;
+        }
+        .ticker.high {
+            background: url('dsc_1439-4x.png') repeat-x;
+        }
+        .ticker.low {
+            background: url('outthebag-4x.png') repeat-x;
+        }
+        @keyframes ticker-scroll {
+            from { transform: translateX(100%); }
+            to { transform: translateX(-100%); }
         }
         .icon {
             width: 50px;
@@ -52,7 +73,9 @@
 <body>
     <div class="overlay" id="overlay">
         <div class="progress-container">
-            <div class="progress-bar" id="progress-bar"></div>
+            <div class="progress-bar" id="progress-bar">
+                <div class="ticker" id="ticker"></div>
+            </div>
             <img src="outthebag-4x.png" class="icon left-icon" alt="Left Icon">
             <img src="dsc_1439-4x.png" class="icon right-icon" alt="Right Icon">
         </div>
@@ -63,30 +86,29 @@
 
         function updateProgress(value) {
             const progressBar = document.getElementById('progress-bar');
+            const ticker = document.getElementById('ticker');
             progressBar.style.width = value + '%';
-            
-            // // RED to GREEN
-            // // Interpolating colors from red (low) to yellow (mid) to green (high)
-            // let red = Math.max(255 - (value * 2.55), 0); // Red decreases as value increases
-            // let green = Math.min(value * 2.55, 255); // Green increases as value increases
-            // let color = `rgb(${red}, ${green}, 0)`;
 
-
-            // DSC_1439 COLORS
-            // Start color: #df8840 (RGB 223, 136, 64)
             let startR = 201, startG = 114, startB = 0;
-
-            // End color: #7781fa (RGB 119, 129, 250)
             let endR = 33, endG = 39, endB = 145;
 
-            // Interpolating colors based on progress (value from 0 to 100)
             let r = Math.round(startR + (endR - startR) * (value / 100));
             let g = Math.round(startG + (endG - startG) * (value / 100));
             let b = Math.round(startB + (endB - startB) * (value / 100));
 
             let color = `rgb(${r}, ${g}, ${b})`;
-            
             progressBar.style.background = color;
+
+            if (value >= 100) {
+                ticker.className = 'ticker high';
+                ticker.style.display = 'block';
+            } else if (value <= 0) {
+                ticker.className = 'ticker low';
+                ticker.style.display = 'block';
+                progressBar.style.width = '100%';
+            } else {
+                ticker.style.display = 'none';
+            }
         }
         
         function setOverlayOpacity(opacity) {
@@ -95,18 +117,15 @@
         }
 
         function resetInactivityTimer() {
-            // If a timer exists, clear it
             if (inactivityTimer) {
                 console.log("Clearing previous inactivity timer...");
                 clearTimeout(inactivityTimer);
             }
-
-            // Set a new timer to hide the overlay if no message is received in 30 seconds
             console.log("Setting new inactivity timer...");
             inactivityTimer = setTimeout(function() {
                 console.log("No message received for 30 seconds. Hiding overlay.");
                 setOverlayOpacity(0);
-            }, 30000); // 30 seconds
+            }, 30000);
         }
 
         function connectWebSocket() {
@@ -122,15 +141,13 @@
 
                 updateProgress(message);
                 setOverlayOpacity(1);
-                // setOverlayOpacity(0);
 
-                // Reset the inactivity timer whenever a message is received
                 resetInactivityTimer();
             };
 
             socket.onclose = function() {
                 console.log("WebSocket connection closed. Attempting to reconnect...");
-                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
             };
 
             socket.onerror = function(error) {
@@ -139,7 +156,6 @@
             };
         }
 
-        // Initialize WebSocket connection
         connectWebSocket();
     </script>
 </body>

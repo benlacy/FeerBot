@@ -70,7 +70,7 @@ class Bot(commands.Bot):
             self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
         else:
             timediff = datetime.now(timezone.utc) - self.chat_sentiment[message.author.display_name][1]
-            if (value != self.chat_sentiment[message.author.display_name][0]) or (timediff > timedelta(seconds=1)):
+            if (value != self.chat_sentiment[message.author.display_name][0]) or (timediff > timedelta(seconds=30)):
                 print(f'NEW')
                 self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
             else:
@@ -79,7 +79,7 @@ class Bot(commands.Bot):
 
         self.total_sentiment = self.total_sentiment + value
         if self.total_sentiment < 0:
-            self.total_sentiment = 1
+            self.total_sentiment = 0
         if self.total_sentiment > 100:
             self.total_sentiment = 100
 
