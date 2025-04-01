@@ -32,7 +32,7 @@
         .progress-bar {
             width: 50%;
             height: 100%;
-            background: rgb(127, 127, 0);
+            background: rgb(117, 76, 72);
             transition: width 0.5s ease-in-out, background 0.5s ease-in-out;
         }
         .icon {
@@ -53,8 +53,8 @@
     <div class="overlay" id="overlay">
         <div class="progress-container">
             <div class="progress-bar" id="progress-bar"></div>
-            <img src="ICAN-4x.png" class="icon left-icon" alt="Left Icon">
-            <img src="ICANT-4x.png" class="icon right-icon" alt="Right Icon">
+            <img src="outthebag-4x.png" class="icon left-icon" alt="Left Icon">
+            <img src="dsc_1439-4x.png" class="icon right-icon" alt="Right Icon">
         </div>
     </div>
 
@@ -65,10 +65,26 @@
             const progressBar = document.getElementById('progress-bar');
             progressBar.style.width = value + '%';
             
-            // Interpolating colors from red (low) to yellow (mid) to green (high)
-            let red = Math.max(255 - (value * 2.55), 0); // Red decreases as value increases
-            let green = Math.min(value * 2.55, 255); // Green increases as value increases
-            let color = `rgb(${red}, ${green}, 0)`;
+            // // RED to GREEN
+            // // Interpolating colors from red (low) to yellow (mid) to green (high)
+            // let red = Math.max(255 - (value * 2.55), 0); // Red decreases as value increases
+            // let green = Math.min(value * 2.55, 255); // Green increases as value increases
+            // let color = `rgb(${red}, ${green}, 0)`;
+
+
+            // DSC_1439 COLORS
+            // Start color: #df8840 (RGB 223, 136, 64)
+            let startR = 201, startG = 114, startB = 0;
+
+            // End color: #7781fa (RGB 119, 129, 250)
+            let endR = 33, endG = 39, endB = 145;
+
+            // Interpolating colors based on progress (value from 0 to 100)
+            let r = Math.round(startR + (endR - startR) * (value / 100));
+            let g = Math.round(startG + (endG - startG) * (value / 100));
+            let b = Math.round(startB + (endB - startB) * (value / 100));
+
+            let color = `rgb(${r}, ${g}, ${b})`;
             
             progressBar.style.background = color;
         }

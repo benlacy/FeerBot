@@ -26,10 +26,17 @@ CHANNELS = [CHANNEL_NAME]
 # Function to check if input matches a Quick Chat and get its index
 def get_progress_bar_change(user_input):
     cleaned_input = re.sub(r'\s+', '', user_input)
-    if cleaned_input in {"ICAN", "-2"}:
-        return -5
-    if cleaned_input in {"ICANT","ICUMT","lCUMT","+2"}:
+
+    # Keywords to search for
+    decrease_keywords = {"dsc_9341"}
+    increase_keywords = {"dsc_1439"}
+
+    # if cleaned_input in {"ICANT","ICUMT","lCUMT","+2","WECANT","Utopia"}:
+    if any(keyword in cleaned_input for keyword in increase_keywords):
         return 5
+    # if cleaned_input in {"ICAN","WECAN", "-2"}:
+    if any(keyword in cleaned_input for keyword in decrease_keywords):
+        return -5
     return 0
 
 class Bot(commands.Bot):
@@ -63,16 +70,16 @@ class Bot(commands.Bot):
             self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
         else:
             timediff = datetime.now(timezone.utc) - self.chat_sentiment[message.author.display_name][1]
-            if (value != self.chat_sentiment[message.author.display_name][0]) or (timediff > timedelta(seconds=30)):
+            if (value != self.chat_sentiment[message.author.display_name][0]) or (timediff > timedelta(seconds=1)):
                 print(f'NEW')
                 self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
             else:
-                self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
+                # self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
                 return
 
         self.total_sentiment = self.total_sentiment + value
         if self.total_sentiment < 0:
-            self.total_sentiment = 0
+            self.total_sentiment = 1
         if self.total_sentiment > 100:
             self.total_sentiment = 100
 
