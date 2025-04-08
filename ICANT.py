@@ -29,7 +29,7 @@ def get_progress_bar_change(user_input):
 
     # Keywords to search for
     decrease_keywords = {"dsc_9341"}
-    increase_keywords = {"dsc_1439"}
+    increase_keywords = {"dsc_1439","feerDsc1439"}
 
     # if cleaned_input in {"ICANT","ICUMT","lCUMT","+2","WECANT","Utopia"}:
     if any(keyword in cleaned_input for keyword in increase_keywords):
