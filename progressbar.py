@@ -1,43 +1,77 @@
 import os
 import asyncio
 import websockets
+import logging
+from typing import Dict, Tuple, Optional
 from twitchio.ext import commands
 from datetime import datetime, timezone, timedelta
 import re
 
-# WebSocket Server URL (to send messages to the overlay)
-OVERLAY_WS = "ws://localhost:6790"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Replace with your bot's details
+# Constants
+OVERLAY_WS = "ws://localhost:6790"
+PREFIX = '!'
+INITIAL_SENTIMENT = 50
+SENTIMENT_COOLDOWN = 30  # seconds
+SENTIMENT_CHANGE = 5
+MAX_SENTIMENT = 100
+MIN_SENTIMENT = 0
+
+# Sentiment keywords
+INCREASE_KEYWORDS = {"ICANT", "ICUMT", "lCUMT", "+2", "WECANT", "Utopia", "LOL"}
+DECREASE_KEYWORDS = {"ICAN", "WECAN", "-2"}
+
+# Environment variables
 TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
-CLIENT_ID = os.getenv("TWITCH_APP_CLIENT_ID")  # Add this to your environment variables
+CLIENT_ID = os.getenv("TWITCH_APP_CLIENT_ID")
 CLIENT_SECRET = os.getenv("TWITCH_APP_CLIENT_SECRET")
 CHANNEL_NAME = "Feer"
 
-if not TOKEN or not CLIENT_ID or not CLIENT_SECRET:
-    print("FATAL ERROR: TOKEN ENV NOT SET")
-    exit()
+# Validate environment variables
+missing_vars = [var for var, value in {
+    "TWITCH_BOT_ACCESS_TOKEN": TOKEN,
+    "TWITCH_APP_CLIENT_ID": CLIENT_ID,
+    "TWITCH_APP_CLIENT_SECRET": CLIENT_SECRET
+}.items() if not value]
 
-# NICK = 'FeerBot'
-PREFIX = '!'
+if missing_vars:
+    logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+    exit(1)
+
 CHANNELS = [CHANNEL_NAME]
 
+class SentimentTracker:
+    def __init__(self, initial_value: int = INITIAL_SENTIMENT):
+        self.total_sentiment = initial_value
+        self.user_sentiments: Dict[str, Tuple[int, datetime]] = {}
 
-# Function to check if input matches a Quick Chat and get its index
-def get_progress_bar_change(user_input):
-    cleaned_input = re.sub(r'\s+', '', user_input)
+    def update_sentiment(self, username: str, value: int) -> bool:
+        """Update sentiment for a user and return whether the update was applied."""
+        current_time = datetime.now(timezone.utc)
+        
+        if username not in self.user_sentiments:
+            self.user_sentiments[username] = (value, current_time)
+            return True
+            
+        prev_value, prev_time = self.user_sentiments[username]
+        time_diff = current_time - prev_time
+        
+        if value != prev_value or time_diff > timedelta(seconds=SENTIMENT_COOLDOWN):
+            self.user_sentiments[username] = (value, current_time)
+            return True
+            
+        return False
 
-    # Keywords to search for
-    decrease_keywords = {"ICAN","WECAN", "-2"}#{"dsc_9341"}
-    increase_keywords = {"ICANT","ICUMT","lCUMT","+2","WECANT","Utopia","LOL"}#{"dsc_1439","feerDsc1439"}
-
-    # if cleaned_input in {"ICANT","ICUMT","lCUMT","+2","WECANT","Utopia"}:
-    if any(keyword in cleaned_input for keyword in increase_keywords):
-        return 5
-    # if cleaned_input in {"ICAN","WECAN", "-2"}:
-    if any(keyword in cleaned_input for keyword in decrease_keywords):
-        return -5
-    return 0
+    def adjust_total(self, value: int) -> int:
+        """Adjust total sentiment and return the new value."""
+        self.total_sentiment = max(MIN_SENTIMENT, min(MAX_SENTIMENT, self.total_sentiment + value))
+        return self.total_sentiment
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -46,75 +80,77 @@ class Bot(commands.Bot):
             prefix=PREFIX,
             initial_channels=CHANNELS
         )
-        self.ws = None  # WebSocket connection placeholder
-        self.chat_sentiment = {}
-        self.total_sentiment = 50
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.sentiment_tracker = SentimentTracker()
 
     async def event_ready(self):
-        print(f'Logged in as {self.nick}')
-        # Start the background task for periodically checking Hype Train level
-        #self.loop.create_task(self.update_hype_train_periodically())
+        logger.info(f'Logged in as {self.nick}')
+        await self.connect_websocket()
 
-        await self.connect_websocket()  # Start WebSocket connection
+    def get_progress_bar_change(self, user_input: str) -> int:
+        """Determine sentiment change from user input."""
+        cleaned_input = re.sub(r'\s+', '', user_input)
+        
+        if any(keyword in cleaned_input for keyword in INCREASE_KEYWORDS):
+            return SENTIMENT_CHANGE
+        if any(keyword in cleaned_input for keyword in DECREASE_KEYWORDS):
+            return -SENTIMENT_CHANGE
+        return 0
 
     async def event_message(self, message):
         if message.echo:
             return
         
-        value = get_progress_bar_change(message.content)
+        value = self.get_progress_bar_change(message.content)
         if value == 0:
-            print(f'(not applied):{message.content}')
+            logger.debug(f'No sentiment change for message: {message.content}')
             return
 
-        if message.author.display_name not in self.chat_sentiment:
-            self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
+        # Only send to overlay if the sentiment actually changes
+        if self.sentiment_tracker.update_sentiment(message.author.display_name, value):
+            new_sentiment = self.sentiment_tracker.adjust_total(value)
+            logger.info(f'Sentiment updated to: {new_sentiment} (change: {value:+d}) (by {message.author.display_name})')
+            await self.send_to_overlay(str(new_sentiment))
         else:
-            timediff = datetime.now(timezone.utc) - self.chat_sentiment[message.author.display_name][1]
-            if (value != self.chat_sentiment[message.author.display_name][0]) or (timediff > timedelta(seconds=30)):
-                print(f'NEW')
-                self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
-            else:
-                # self.chat_sentiment[message.author.display_name] = [value, datetime.now(timezone.utc)]
-                return
-
-        self.total_sentiment = self.total_sentiment + value
-        if self.total_sentiment < 0:
-            self.total_sentiment = 0
-        if self.total_sentiment > 100:
-            self.total_sentiment = 100
-
-        print(f'{str(self.total_sentiment)}')
-        await self.send_to_overlay(str(self.total_sentiment))
-        
+            logger.debug(f'Sentiment update ignored due to cooldown for user: {message.author.display_name}')
 
     async def connect_websocket(self):
-        """Maintains a persistent WebSocket connection."""
+        """Maintains a persistent WebSocket connection with exponential backoff."""
+        retry_delay = 1
+        max_delay = 30
+        
         while True:
             try:
                 async with websockets.connect(OVERLAY_WS) as ws:
                     self.ws = ws
-                    print("Connected to WebSocket overlay.")
-
-                    # Keep the connection alive
+                    logger.info("Connected to WebSocket overlay")
+                    retry_delay = 1  # Reset delay on successful connection
+                    
                     while True:
                         await asyncio.sleep(1)
+                        
+            except websockets.exceptions.ConnectionClosed as e:
+                logger.warning(f"WebSocket connection closed: {e}")
             except Exception as e:
-                print(f"WebSocket connection error: {e}. Reconnecting in 3 seconds...")
-                await asyncio.sleep(3)  # Wait before reconnecting
+                logger.error(f"WebSocket connection error: {e}")
+            
+            # Exponential backoff with max delay
+            retry_delay = min(retry_delay * 2, max_delay)
+            logger.info(f"Reconnecting in {retry_delay} seconds...")
+            await asyncio.sleep(retry_delay)
 
-    async def send_to_overlay(self, text):
+    async def send_to_overlay(self, text: str):
         """Send message using existing WebSocket connection."""
-        if self.ws and (self.ws.state == websockets.State.OPEN):  # Ensure WebSocket is open
-            try:
-                await self.ws.send(text)
-            except websockets.exceptions.ConnectionClosed:
-                print("WebSocket closed. Reconnecting...")
-                await self.connect_websocket()
-        else:
-            print("WebSocket not connected. Message not sent.")
-            print("WebSocket closed. Reconnecting...")
+        if not self.ws or self.ws.state != websockets.State.OPEN:
+            logger.warning("WebSocket not connected. Attempting to reconnect...")
             await self.connect_websocket()
-
+            return
+            
+        try:
+            await self.ws.send(text)
+        except websockets.exceptions.ConnectionClosed:
+            logger.warning("WebSocket closed during send. Reconnecting...")
+            await self.connect_websocket()
 
 if __name__ == '__main__':
     bot = Bot()
