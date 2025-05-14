@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamepad Overlay</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            padding: 0 20px;
+        }
+
+        .container {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        /* Player 1 on the left side */
+        .player1-container {
+            width: 45%;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding-right: 20px;
+        }
+
+        /* Player 2 on the right side */
+        .player2-container {
+            width: 45%;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            padding-left: 20px;
+        }
+
+        .bubble {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 2px solid black;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 3px;
+            opacity: 0;
+            font-size: 20px;
+            font-weight: bold;
+            text-transform: none;
+            animation-duration: 5s;
+            animation-timing-function: ease-in-out;
+            animation-fill-mode: forwards;
+        }
+
+        .bubble.player1 {
+            background-color: rgba(30, 144, 255, 0.8);
+            animation-name: fadeInLeftUp;
+        }
+
+        .bubble.player2 {
+            background-color: rgba(255, 165, 0, 0.8);
+            animation-name: fadeInRightUp;
+        }
+
+        @keyframes fadeInLeftUp {
+            0% {
+                opacity: 0;
+                transform: translate(-100px, 0);
+            }
+            10% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+            90% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(0, -100px);
+            }
+        }
+
+        @keyframes fadeInRightUp {
+            0% {
+                opacity: 0;
+                transform: translate(100px, 0);
+            }
+            10% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+            90% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(0, -100px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Player 1's command bubbles on the left side -->
+        <div class="player1-container" id="p1_commands"></div>
+
+        <!-- Player 2's command bubbles on the right side -->
+        <div class="player2-container" id="p2_commands"></div>
+    </div>
+
+    <script>
+        function createBubble(player, commandText) {
+            const bubble = document.createElement('div');
+            bubble.classList.add('bubble');
+            bubble.classList.add(player === 1 ? 'player1' : 'player2');
+            bubble.textContent = commandText;
+
+            const container = player === 1 ? document.getElementById('p1_commands') : document.getElementById('p2_commands');
+            container.appendChild(bubble);
+
+            // Remove the bubble after animation ends
+            setTimeout(() => {
+                bubble.remove();
+            }, 5000); // Matches the animation duration
+        }
+
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6788");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                let message = event.data;
+                console.log("New message:", message);
+
+                // Step 1: Extract the first character
+                let firstChar = message.charAt(0);
+
+                // Step 2: Remove the first character from the string
+                let command = message.slice(1);
+
+                // Step 3: Determine the team based on the first character
+                let team;
+                if (firstChar.toLowerCase() === '1') {
+                    createBubble(1, command)
+                } else if (firstChar.toLowerCase() === '2') {
+                    createBubble(2, command)
+                }
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000); // Attempt to reconnect after 3 seconds
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+
+        // // Example to test with dummy data
+        // setInterval(() => {
+        //     updateCommands("boost", "jump 2");
+        // }, 600);
+    </script>
+</body>
+</html>

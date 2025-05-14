@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Results Table</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    table {
+      width: auto;
+      border-collapse: collapse;
+      background-color: #1e1e1e;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: center;
+    }
+    th:nth-child(2), td:nth-child(2),
+    th:nth-child(3), td:nth-child(3) {
+      width: 80px;
+    }
+    td[contenteditable] {
+      background-color: #2a2a2a;
+    }
+    input[type="checkbox"] {
+      transform: scale(1.2);
+    }
+    tfoot td {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h2>Game Match Results</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Game Type</th>
+        <th>Team A</th>
+        <th>Team Z</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td contenteditable="true"></td>
+        <td><input type="checkbox" class="team-a"></td>
+        <td><input type="checkbox" class="team-z"></td>
+      </tr>
+      <tr>
+        <td contenteditable="true"></td>
+        <td><input type="checkbox" class="team-a"></td>
+        <td><input type="checkbox" class="team-z"></td>
+      </tr>
+      <tr>
+        <td contenteditable="true"></td>
+        <td><input type="checkbox" class="team-a"></td>
+        <td><input type="checkbox" class="team-z"></td>
+      </tr>
+      <tr>
+        <td contenteditable="true"></td>
+        <td><input type="checkbox" class="team-a"></td>
+        <td><input type="checkbox" class="team-z"></td>
+      </tr>
+      <tr>
+        <td contenteditable="true"></td>
+        <td><input type="checkbox" class="team-a"></td>
+        <td><input type="checkbox" class="team-z"></td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>Total Wins</td>
+        <td id="team-a-total">0</td>
+        <td id="team-z-total">0</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>
+    const checkboxesA = document.querySelectorAll('.team-a');
+    const checkboxesZ = document.querySelectorAll('.team-z');
+    const totalA = document.getElementById('team-a-total');
+    const totalZ = document.getElementById('team-z-total');
+
+    function updateTotals() {
+      const aCount = Array.from(checkboxesA).filter(cb => cb.checked).length;
+      const zCount = Array.from(checkboxesZ).filter(cb => cb.checked).length;
+      totalA.textContent = aCount;
+      totalZ.textContent = zCount;
+    }
+
+    checkboxesA.forEach(cb => cb.addEventListener('change', updateTotals));
+    checkboxesZ.forEach(cb => cb.addEventListener('change', updateTotals));
+  </script>
+</body>
+</html>

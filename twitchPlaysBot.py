@@ -2,6 +2,10 @@ import os
 import vgamepad as vg
 import asyncio
 from twitchio.ext import commands
+import websockets
+
+# WebSocket Server URL (to send messages to the overlay)
+OVERLAY_WS = "ws://localhost:6788"
 
 # === Environment Variables ===
 TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
@@ -19,6 +23,27 @@ if not TOKEN or not CLIENT_ID or not CLIENT_SECRET:
 p1_gamepad = vg.VX360Gamepad()
 p2_gamepad = vg.VX360Gamepad()
 
+
+# XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP
+# XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN
+# XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT
+# XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT
+
+# XUSB_BUTTON.XUSB_GAMEPAD_START
+# XUSB_BUTTON.XUSB_GAMEPAD_BACK
+
+# XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB
+# XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB
+
+# XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER
+# XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER
+
+# XUSB_BUTTON.XUSB_GAMEPAD_A
+# XUSB_BUTTON.XUSB_GAMEPAD_B
+# XUSB_BUTTON.XUSB_GAMEPAD_X
+# XUSB_BUTTON.XUSB_GAMEPAD_Y
+
+
 # === Command Maps ===
 state_change_cmd_map = {
     "left": lambda gp, angle: gp.left_joystick(x_value=int(-32768 * angle), y_value=0),
@@ -30,8 +55,20 @@ state_change_cmd_map = {
     "neutral": lambda gp, angle: gp.left_joystick(x_value=0, y_value=0)
 }
 
+
+
 press_and_release_cmd_map = {
+    "dup": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP, 0.1),
+    "ddown": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN, 0.1),
+    "dleft": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT, 0.1),
+    "dright": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT, 0.1),
+    "l1": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER, 0.1),
+    "r1": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER, 0.1),
+    "lb": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER, 0.1),
+    "rb": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER, 0.1),
+    "item": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB, 0.1),
     "jump": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_A, duration),
+    "a": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_A, duration),
     "boost": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_B, duration),
     "ballcam": lambda gp, duration: press_and_release_button(gp, vg.XUSB_BUTTON.XUSB_GAMEPAD_Y, duration),
     "drive": lambda gp, duration: press_and_release_trigger(gp, "rt", duration),
@@ -42,10 +79,13 @@ press_and_release_cmd_map = {
 def is_on_team1(name):
     if not name:
         return False
+    # return True
     return 'a' <= name[0].lower() <= 'm'
+    # return name.lower() == 'feer'
 
 def is_on_team2(name):
     return not is_on_team1(name)
+    # return name.lower() == 'doctorfeer'
 
 async def press_and_release_button(gamepad, button, press_duration=0.2):
     gamepad.press_button(button)
@@ -54,7 +94,8 @@ async def press_and_release_button(gamepad, button, press_duration=0.2):
     gamepad.release_button(button)
     gamepad.update()
 
-async def press_and_release_trigger(gamepad, trigger, press_duration=0.5):
+async def press_and_release_trigger(gamepad, trigger, press_duration=1):
+    # gamepad.reset()
     if trigger == "rt":
         gamepad.right_trigger(value=255)
     elif trigger == "lt":
@@ -71,7 +112,7 @@ async def apply_command(gamepad, command, arg):
     try:
         if command in press_and_release_cmd_map:
             duration = float(arg)
-            if not 0.0 <= duration <= 3.0:
+            if not 0.0 <= duration <= 10.0:
                 duration = 0.5
             await press_and_release_cmd_map[command](gamepad, duration)
 
@@ -82,6 +123,7 @@ async def apply_command(gamepad, command, arg):
             scalar = angle / 100
             state_change_cmd_map[command](gamepad, scalar)
             gamepad.update()
+            await press_and_release_trigger(gamepad, "rt", 1)
     except (ValueError, TypeError):
         print(f"Invalid argument: {arg} for command: {command}")
 
@@ -89,9 +131,11 @@ async def apply_command(gamepad, command, arg):
 class TwitchBot(commands.Bot):
     def __init__(self):
         super().__init__(token=TOKEN, prefix=PREFIX, initial_channels=CHANNELS)
+        self.ws = None  # WebSocket connection placeholder
 
     async def event_ready(self):
         print(f'Logged in as | {self.nick}')
+        await self.connect_websocket()  # Start WebSocket connection
 
     async def event_message(self, message):
         if message.echo:
@@ -111,12 +155,43 @@ class TwitchBot(commands.Bot):
             arg = args[0] if args else 100
             if is_on_team1(message.author.display_name):
                 asyncio.create_task(apply_command(p1_gamepad, cmd, arg))
+                asyncio.create_task(self.send_to_overlay(f'1{message.author.display_name}: {message.content.lower()}'))
                 print(f'{message.content.lower()} **P1 Controller Interaction**')
             elif is_on_team2(message.author.display_name):
                 asyncio.create_task(apply_command(p2_gamepad, cmd, arg))
+                asyncio.create_task(self.send_to_overlay(f'2{message.author.display_name}: {message.content.lower()}'))
                 print(f'{message.content.lower()} **P2 Controller Interaction**')
+
         else:
             print(f'{message.content.lower()}')
+
+    async def connect_websocket(self):
+        """Maintains a persistent WebSocket connection."""
+        while True:
+            try:
+                async with websockets.connect(OVERLAY_WS) as ws:
+                    self.ws = ws
+                    print("Connected to WebSocket overlay.")
+
+                    # Keep the connection alive
+                    while True:
+                        await asyncio.sleep(1)
+            except Exception as e:
+                print(f"WebSocket connection error: {e}. Reconnecting in 3 seconds...")
+                await asyncio.sleep(3)  # Wait before reconnecting
+
+    async def send_to_overlay(self, text):
+        """Send message using existing WebSocket connection."""
+        if self.ws and (self.ws.state == websockets.State.OPEN):  # Ensure WebSocket is open
+            try:
+                await self.ws.send(text)
+            except websockets.exceptions.ConnectionClosed:
+                print("WebSocket closed. Reconnecting...")
+                await self.connect_websocket()
+        else:
+            print("WebSocket not connected. Message not sent.")
+            print("WebSocket closed. Reconnecting...")
+            await self.connect_websocket()
 
 # === Run Bot ===
 if __name__ == '__main__':
