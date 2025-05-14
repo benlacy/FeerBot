@@ -47,10 +47,10 @@
             animation: ticker-scroll 5s linear infinite;
         }
         .ticker.high {
-            background: url('dsc_1439-4x.png') repeat-x;
+            background: url('../assets/ICANT-4x.png') repeat-x;
         }
         .ticker.low {
-            background: url('outthebag-4x.png') repeat-x;
+            background: url('../assets/ICAN-4x.png') repeat-x;
         }
         @keyframes ticker-scroll {
             from { transform: translateX(100%); }
@@ -76,8 +76,8 @@
             <div class="progress-bar" id="progress-bar">
                 <div class="ticker" id="ticker"></div>
             </div>
-            <img src="outthebag-4x.png" class="icon left-icon" alt="Left Icon">
-            <img src="dsc_1439-4x.png" class="icon right-icon" alt="Right Icon">
+            <img src="../assets/ICAN-4x.png" class="icon left-icon" alt="Left Icon">
+            <img src="../assets/ICANT-4x.png" class="icon right-icon" alt="Right Icon">
         </div>
     </div>
 
@@ -89,14 +89,20 @@
             const ticker = document.getElementById('ticker');
             progressBar.style.width = value + '%';
 
-            let startR = 201, startG = 114, startB = 0;
-            let endR = 33, endG = 39, endB = 145;
+            // let startR = 201, startG = 114, startB = 0;
+            // let endR = 33, endG = 39, endB = 145;
 
-            let r = Math.round(startR + (endR - startR) * (value / 100));
-            let g = Math.round(startG + (endG - startG) * (value / 100));
-            let b = Math.round(startB + (endB - startB) * (value / 100));
+            // let r = Math.round(startR + (endR - startR) * (value / 100));
+            // let g = Math.round(startG + (endG - startG) * (value / 100));
+            // let b = Math.round(startB + (endB - startB) * (value / 100));
 
-            let color = `rgb(${r}, ${g}, ${b})`;
+            // let color = `rgb(${r}, ${g}, ${b})`;
+            // progressBar.style.background = color;
+            // Interpolating colors from red (low) to yellow (mid) to green (high)
+            let red = Math.max(255 - (value * 2.55), 0); // Red decreases as value increases
+            let green = Math.min(value * 2.55, 255); // Green increases as value increases
+            let color = `rgb(${red}, ${green}, 0)`;
+             
             progressBar.style.background = color;
 
             if (value >= 100) {
@@ -115,7 +121,8 @@
             const overlay = document.getElementById('overlay');
             overlay.style.opacity = opacity;
         }
-
+        setOverlayOpacity(0); // Set to initially hidden
+        
         function resetInactivityTimer() {
             if (inactivityTimer) {
                 console.log("Clearing previous inactivity timer...");

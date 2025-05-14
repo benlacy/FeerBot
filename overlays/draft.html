@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Draft</title>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .player {
+      width: 120px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 1rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .player::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.6;
+      background-size: cover;
+      background-position: center;
+      z-index: 0;
+    }
+    .player span {
+      position: relative;
+      z-index: 1;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+    .br-flag::before {
+      background-image: url('https://flagcdn.com/w160/br.png');
+    }
+    .us-flag::before {
+      background-image: url('https://flagcdn.com/w160/us.png');
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white py-8">
+  <div class="max-w-4xl mx-auto px-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">Crew Battle Draft</h1>
+
+    <!-- Undrafted Players -->
+    <div class="bg-gray-800 shadow rounded p-4 mb-6 w-full">
+      <h2 class="text-lg font-semibold mb-2">Undrafted Players</h2>
+      <div id="undrafted" class="flex flex-wrap gap-2 min-h-[60px]">
+        <div class="player br-flag rounded cursor-move" data-name="Diaz" data-flag="br"><span>Diaz</span></div>
+        <div class="player us-flag rounded cursor-move" data-name="Firstkiller" data-flag="us"><span>Firstkiller</span></div>
+        <div class="player us-flag rounded cursor-move" data-name="BeastMode" data-flag="us"><span>BeastMode</span></div>
+        <div class="player us-flag rounded cursor-move" data-name="Chronic" data-flag="us"><span>Chronic</span></div>
+        <div class="player us-flag rounded cursor-move" data-name="Wahvey" data-flag="us"><span>Wahvey</span></div>
+        <div class="player us-flag rounded cursor-move" data-name="Evoh" data-flag="us"><span>Evoh</span></div>
+      </div>
+    </div>
+
+  <!-- Teams Section -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-gray-800 shadow rounded p-4">
+      <h2 class="text-lg font-semibold mb-2">Team Feer</h2>
+      <div id="teamA" class="min-h-[100px] bg-gray-700 p-2 roundedflex justify-end gap-2"></div>
+  
+      <!-- Win Reward Section for Team Feer -->
+      <div class="bg-gray-800 shadow rounded p-4 mt-6">
+        <h2 class="text-lg font-semibold mb-2">Win Reward</h2>
+        <input type="text" id="winRewardFeer" class="w-full p-2 bg-gray-700 text-white rounded" placeholder="Enter Team Feer win reward..." />
+      </div>
+    </div>
+  
+    <div class="bg-gray-800 shadow rounded p-4">
+      <h2 class="text-lg font-semibold mb-2">Team Chat</h2>
+      <div id="teamB" class="min-h-[100px] bg-gray-700 p-2 rounded"></div>
+  
+      <!-- Win Reward Section for Team Chat -->
+      <div class="bg-gray-800 shadow rounded p-4 mt-6">
+        <h2 class="text-lg font-semibold mb-2">Win Reward</h2>
+        <input type="text" id="winRewardChat" class="w-full p-2 bg-gray-700 text-white rounded" placeholder="Enter Team Chat win reward..." />
+      </div>
+    </div>
+  </div>
+  
+  </div>
+
+  <script>
+    const options = {
+      group: 'shared',
+      animation: 150,
+      ghostClass: 'bg-yellow-200'
+    };
+
+    new Sortable(undrafted, options);
+    new Sortable(teamA, options);
+    new Sortable(teamB, options);
+  </script>
+</body>
+</html>
