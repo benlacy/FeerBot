@@ -1,8 +1,6 @@
 import os
 import vgamepad as vg
 import asyncio
-from twitchio.ext import commands
-import websockets
 from baseBot import BaseBot
 import logging
 
