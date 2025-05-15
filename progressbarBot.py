@@ -71,7 +71,7 @@ class ProgressBarBot(BaseBot):
         
         value = self.get_progress_bar_change(message.content)
         if value == 0:
-            logger.debug(f'No sentiment change for message: {message.content}')
+            logger.info(f'No sentiment change for message: {message.content}')
             return
 
         # Only send to overlay if the sentiment actually changes
@@ -80,7 +80,7 @@ class ProgressBarBot(BaseBot):
             logger.info(f'Sentiment updated to: {new_sentiment} (change: {value:+d}) (by {message.author.display_name})')
             await self.send_to_overlay(str(new_sentiment))
         else:
-            logger.debug(f'Sentiment update ignored due to cooldown for user: {message.author.display_name}')
+            logger.info(f'Sentiment update ignored due to cooldown for user: {message.author.display_name}')
 
 if __name__ == '__main__':
     bot = ProgressBarBot()

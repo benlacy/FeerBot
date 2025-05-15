@@ -3,6 +3,10 @@ import vgamepad as vg
 import asyncio
 from twitchio.ext import commands
 import websockets
+from baseBot import BaseBot
+import logging
+
+logger = logging.getLogger(__name__)
 
 # WebSocket Server URL (to send messages to the overlay)
 OVERLAY_WS = "ws://localhost:6788"
@@ -128,14 +132,13 @@ async def apply_command(gamepad, command, arg):
         print(f"Invalid argument: {arg} for command: {command}")
 
 # === Twitch Bot ===
-class TwitchBot(commands.Bot):
+class TwitchPlaysBot(BaseBot):
     def __init__(self):
-        super().__init__(token=TOKEN, prefix=PREFIX, initial_channels=CHANNELS)
-        self.ws = None  # WebSocket connection placeholder
-
-    async def event_ready(self):
-        print(f'Logged in as | {self.nick}')
-        await self.connect_websocket()  # Start WebSocket connection
+        super().__init__(
+            overlay_ws_url=OVERLAY_WS,
+            prefix='!',
+            channel_name="Feer"
+        )
 
     async def event_message(self, message):
         if message.echo:
@@ -156,44 +159,15 @@ class TwitchBot(commands.Bot):
             if is_on_team1(message.author.display_name):
                 asyncio.create_task(apply_command(p1_gamepad, cmd, arg))
                 asyncio.create_task(self.send_to_overlay(f'1{message.author.display_name}: {message.content.lower()}'))
-                print(f'{message.content.lower()} **P1 Controller Interaction**')
+                logger.info(f'{message.content.lower()} **P1 Controller Interaction**')
             elif is_on_team2(message.author.display_name):
                 asyncio.create_task(apply_command(p2_gamepad, cmd, arg))
                 asyncio.create_task(self.send_to_overlay(f'2{message.author.display_name}: {message.content.lower()}'))
-                print(f'{message.content.lower()} **P2 Controller Interaction**')
-
+                logger.info(f'{message.content.lower()} **P2 Controller Interaction**')
         else:
-            print(f'{message.content.lower()}')
-
-    async def connect_websocket(self):
-        """Maintains a persistent WebSocket connection."""
-        while True:
-            try:
-                async with websockets.connect(OVERLAY_WS) as ws:
-                    self.ws = ws
-                    print("Connected to WebSocket overlay.")
-
-                    # Keep the connection alive
-                    while True:
-                        await asyncio.sleep(1)
-            except Exception as e:
-                print(f"WebSocket connection error: {e}. Reconnecting in 3 seconds...")
-                await asyncio.sleep(3)  # Wait before reconnecting
-
-    async def send_to_overlay(self, text):
-        """Send message using existing WebSocket connection."""
-        if self.ws and (self.ws.state == websockets.State.OPEN):  # Ensure WebSocket is open
-            try:
-                await self.ws.send(text)
-            except websockets.exceptions.ConnectionClosed:
-                print("WebSocket closed. Reconnecting...")
-                await self.connect_websocket()
-        else:
-            print("WebSocket not connected. Message not sent.")
-            print("WebSocket closed. Reconnecting...")
-            await self.connect_websocket()
+            logger.debug(f'{message.content.lower()}')
 
 # === Run Bot ===
 if __name__ == '__main__':
-    bot = TwitchBot()
+    bot = TwitchPlaysBot()
     asyncio.run(bot.run())
