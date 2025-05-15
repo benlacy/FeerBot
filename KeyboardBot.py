@@ -1,12 +1,6 @@
 import os
-import asyncio
-import websockets
-import twitchio
 from twitchio.ext import commands
 import keyboard
-import time
-import re
-import requests
 import pygetwindow as gw
 from baseBot import BaseBot
 import logging
