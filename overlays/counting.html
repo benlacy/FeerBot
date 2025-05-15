@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Counting Game Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #counter {
+            font-size: 120px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            padding: 30px 40px;
+            border-radius: 15px;
+            background: rgba(0, 0, 0, 0.6);
+            transition: all 0.3s ease;
+            min-width: 200px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;  /* For positioning the floating text */
+        }
+
+        .floating-text {
+            position: absolute;
+            font-size: 72px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            white-space: nowrap;
+            pointer-events: none;
+            animation: float-up 1.5s ease-out forwards;
+            top: -20px;  /* Start position above the counter */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;  /* Ensure it's above other elements */
+        }
+
+        .floating-text.correct {
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+        }
+
+        .floating-text.reset {
+            color: #ff0000;
+            text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+        }
+
+        @keyframes float-up {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, 0) scale(0.8);
+            }
+            10% {
+                opacity: 1;
+                transform: translate(-50%, 0) scale(1);
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -150px) scale(0.8);  /* Increased scroll distance */
+            }
+        }
+
+        #counter.reset {
+            animation: reset-flash 1.5s ease;
+        }
+
+        #counter.correct {
+            animation: correct-flash 1.5s ease;
+        }
+
+        @keyframes reset-flash {
+            0% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+            10% { 
+                transform: scale(1.2);
+                background: rgba(255, 0, 0, 0.7);
+                text-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+            }
+            70% { 
+                transform: scale(1.2);
+                background: rgba(255, 0, 0, 0.7);
+                text-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+            }
+            100% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+        }
+
+        @keyframes correct-flash {
+            0% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+            10% { 
+                transform: scale(1.1);
+                background: rgba(0, 255, 0, 0.7);
+                text-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+            }
+            70% { 
+                transform: scale(1.1);
+                background: rgba(0, 255, 0, 0.7);
+                text-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+            }
+            100% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="counter">0</div>
+
+    <script>
+        const counter = document.getElementById('counter');
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+
+        function createFloatingText(text, type) {
+            const floatingText = document.createElement('div');
+            floatingText.className = `floating-text ${type}`;
+            floatingText.textContent = type === 'correct' ? `+ ${text}` : `- ${text}`;
+            
+            // Add to body instead of counter to ensure proper stacking
+            document.body.appendChild(floatingText);
+
+            // Position relative to counter
+            const counterRect = counter.getBoundingClientRect();
+            floatingText.style.top = `${counterRect.top}px`;
+            floatingText.style.left = `${counterRect.left + counterRect.width / 2}px`;
+
+            // Remove the element after animation completes
+            floatingText.addEventListener('animationend', () => {
+                floatingText.remove();
+            });
+        }
+
+        function connectWebSocket() {
+            // Clear any existing reconnect timeout
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            // Close existing connection if any
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to WebSocket server');
+                };
+
+                ws.onmessage = (event) => {
+                    const message = event.data;
+                    if (message.startsWith('COUNT:')) {
+                        const [_, count, user] = message.split(':');
+                        updateCounter(count, user);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    // Only set reconnect timeout if we don't already have one
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        function updateCounter(count, user) {
+            const currentCount = parseInt(counter.textContent);
+            const newCount = parseInt(count);
+            
+            // If we're resetting to 0, add the reset animation
+            if (currentCount !== 0 && newCount === 0) {
+                // Force a reflow to ensure the animation restarts
+                void counter.offsetWidth;
+                counter.classList.add('reset');
+                setTimeout(() => counter.classList.remove('reset'), 1500);
+                if (user) createFloatingText(user, 'reset');
+            }
+            // If the number increased by 1, add the correct animation
+            else if (newCount === currentCount + 1) {
+                // Force a reflow to ensure the animation restarts
+                void counter.offsetWidth;
+                counter.classList.add('correct');
+                setTimeout(() => counter.classList.remove('correct'), 1500);
+                if (user) createFloatingText(user, 'correct');
+            }
+            
+            counter.textContent = count;
+        }
+
+        // Initial connection
+        connectWebSocket();
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html> 

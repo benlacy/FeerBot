@@ -8,6 +8,10 @@ import time
 import re
 import requests
 import pygetwindow as gw
+from baseBot import BaseBot
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Replace with your bot's details
 TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
@@ -29,17 +33,14 @@ def is_wow_focused():
     active_window = gw.getActiveWindow()
     return active_window and game_window_name in active_window.title
 
-
-class Bot(commands.Bot):
+class KeyboardBot(BaseBot):
     def __init__(self):
         super().__init__(
-            token=TOKEN,
-            prefix=PREFIX,
-            initial_channels=CHANNELS
+            overlay_ws_url=None,  # This bot doesn't use WebSocket
+            prefix='!',
+            channel_name="Feer",
+            require_client_id=False  # This bot doesn't need client ID
         )
-
-    async def event_ready(self):
-        print(f'Logged in as {self.nick}')
 
     async def event_message(self, message):
         if message.echo:
@@ -48,15 +49,10 @@ class Bot(commands.Bot):
         if message.content.lower() in valid_keys:
             if is_wow_focused():
                 keyboard.press_and_release(message.content.lower())
-                print(message.content.lower())
+                logger.info(message.content.lower())
             else:
-                print(f'Wow not focused:{message.content}')
-
-        # if index == -1:
-        #     print(f'(not a quick chat):{message.content}')
-        #     return
-
+                logger.debug(f'Wow not focused:{message.content}')
 
 if __name__ == '__main__':
-    bot = Bot()
+    bot = KeyboardBot()
     bot.run()

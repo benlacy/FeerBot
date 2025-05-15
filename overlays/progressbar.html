@@ -146,10 +146,13 @@
                 let message = event.data;
                 console.log("New message:", message);
 
-                updateProgress(message);
-                setOverlayOpacity(1);
-
-                resetInactivityTimer();
+                // Parse message as number and validate range
+                let value = Number(message);
+                if (!isNaN(value) && value >= 0 && value <= 100) {
+                    updateProgress(value);
+                    setOverlayOpacity(1);
+                    resetInactivityTimer();
+                }
             };
 
             socket.onclose = function() {
