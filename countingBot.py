@@ -24,7 +24,7 @@ class CountingBot(BaseBot):
         self.current_count = 0
         self.record_high = 0  # Track the highest number reached
         self.expected_number = 1  # The next number we're expecting to see
-        self.last_user = None  # Track the last user who counted
+        self.current_streak_users = set()  # Track all users in the current streak
         self.update_lock = asyncio.Lock()  # Lock for thread-safe updates
 
     async def get_user_id(self, username: str) -> str:
@@ -63,56 +63,41 @@ class CountingBot(BaseBot):
 
     def is_valid_number(self, message: str) -> bool:
         """
-        Check if the message contains a positive integer.
-        Accepts both standalone numbers (e.g., "123") and numbers within messages (e.g., "count to 123").
-        Numbers must not contain letters or special characters.
+        Check if the message is purely a positive integer.
+        Only accepts standalone numbers (e.g., "123").
+        Messages containing any other text or characters are not valid.
         
         Args:
             message: The message to check
             
         Returns:
-            bool: True if the message contains a valid number
+            bool: True if the message is purely a number
         """
-        # First check if the entire message is just a number
-        if message.isdigit():
-            logger.debug(f"Found standalone number: {message}")
-            return True
-            
-        # Otherwise look for numbers in the message that are separated by whitespace
-        # This regex looks for:
-        # - A word boundary or start of string
-        # - Followed by one or more digits (positive integer)
-        # - Followed by a word boundary or end of string
-        matches = re.finditer(r'(?:^|\s)(\d+)(?:\s|$)', message)
-        
-        # Get the first match if any
-        match = next(matches, None)
-        if match:
-            # Extract the number from the match
-            number = int(match.group(1))
-            logger.debug(f"Found number {number} in message: {message}")
+        # Check if the entire message is just a number
+        if message.strip().isdigit():
+            logger.debug(f"Found valid number: {message}")
             return True
         return False
 
     def extract_number(self, message: str) -> int:
         """
-        Extract the first valid number from a message.
+        Extract the number from a message.
+        Since we only accept pure numbers now, this simply converts the message to an integer.
         
         Args:
             message: The message to extract from
             
         Returns:
-            int: The first valid number found, or 0 if none found
+            int: The number if valid, or 0 if invalid
         """
-        # First check if the entire message is just a number
-        if message.isdigit():
-            return int(message)
-            
-        # Otherwise look for numbers in the message
-        match = re.search(r'(?:^|\s)(\d+)(?:\s|$)', message)
-        if match:
-            return int(match.group(1))
-        return 0
+        try:
+            return int(message.strip())
+        except ValueError:
+            return 0
+
+    def timeout_seconds(streak):
+        timeout = 7.5 * (2 ** streak)
+        return min(timeout, 86400)  # 24-hour cap
 
     async def timeout_user(self, user_id: str, username: str, duration: int = TIMEOUT_DURATION, reason: str = "Wrong number in counting game"):
         """
@@ -166,8 +151,8 @@ class CountingBot(BaseBot):
     async def event_message(self, message):
         """
         Handle incoming messages and update the counter based on the counting game rules.
-        Uses a lock to ensure thread safety. If a user tries to count twice in a row,
-        it's treated as a failure and resets the counter to 0.
+        Uses a lock to ensure thread safety. If a user who has already participated in the
+        current streak tries to count again, it's treated as a failure and resets the counter to 0.
         """
         if message.echo or message.author.display_name == "Nightbot":
             return
@@ -185,16 +170,17 @@ class CountingBot(BaseBot):
             
             # Use lock to ensure thread-safe updates
             async with self.update_lock:
-                # Check if this user was the last to count
-                if username == self.last_user:
-                    # Treat duplicate counting as a failure
+                # Check if this user has already participated in the current streak
+                if username in self.current_streak_users:
+                    # Treat repeat counting as a failure
+                    timeout_duration = self.timeout_seconds(self.current_count)
                     self.current_count = 0
                     self.expected_number = 1
-                    self.last_user = username
-                    logger.info(f"User {username} tried to count twice in a row - resetting to 0")
+                    self.current_streak_users.clear()  # Clear the streak users
+                    logger.info(f"User {username} tried to count again in the same streak - resetting to 0")
                     await self.send_to_overlay(f"COUNT:0:{username}:{self.record_high}:0")
-                    # Timeout the user for counting twice in a row
-                    await self.timeout_user(user_id, username, reason="Counting twice in a row")
+                    # Timeout the user for counting again in the same streak
+                    await self.timeout_user(user_id, username, duration=timeout_duration, reason="Counting again in the same streak")
                     return
 
                 # Check if this is the number we're expecting
@@ -206,7 +192,7 @@ class CountingBot(BaseBot):
                         self.record_high = number
                         is_record = True
                     self.expected_number = number + 1
-                    self.last_user = username  # Update last user only on successful count
+                    self.current_streak_users.add(username)  # Add user to the streak
                     logger.info(f"Correct number! Count is now {self.current_count} (by {username})")
                     # Send update to overlay with username, record high, and record flag
                     await self.send_to_overlay(f"COUNT:{self.current_count}:{username}:{self.record_high}:{int(is_record)}")
@@ -215,12 +201,13 @@ class CountingBot(BaseBot):
                     right_number = self.expected_number
                     self.current_count = 0
                     self.expected_number = 1
-                    self.last_user = username  # Update last user on reset too
+                    self.current_streak_users.clear()  # Clear the streak users
                     logger.info(f"Wrong number ({number})! Resetting to 0 (by {username})")
                     # Send reset to overlay with username, record high, and no record flag
                     await self.send_to_overlay(f"COUNT:0:{username}:{self.record_high}:0")
                     # Timeout the user for getting the wrong number
-                    await self.timeout_user(user_id, username, reason=f"Wrong number ({number}). Expected ({right_number})")
+                    timeout_duration = self.timeout_seconds(right_number-1)
+                    await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Wrong number ({number}). Expected ({right_number})")
                 
         except ValueError:
             # This shouldn't happen due to our regex check, but just in case

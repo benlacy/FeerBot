@@ -209,10 +209,12 @@
         <div id="counter">0</div>
         <div id="record-high">0</div>
     </div>
+    <audio id="countSound" src="C:/Users/benjl/OneDrive/Documents/code/FeerBot/assets/meow.mp3" preload="auto"></audio>
 
     <script>
         const counter = document.getElementById('counter');
         const recordHigh = document.getElementById('record-high');
+        const countSound = document.getElementById('countSound');
         let ws = null;
         let reconnectTimeout = null;
         const wsUrl = 'ws://localhost:6790';
@@ -286,6 +288,12 @@
             const currentCount = parseInt(counter.textContent);
             const newCount = parseInt(count);
             const newRecord = parseInt(record);
+            
+            // Play sound when count reaches 5
+            if (newCount === 5) {
+                countSound.currentTime = 0; // Reset sound to start
+                countSound.play().catch(error => console.log('Error playing sound:', error));
+            }
             
             // Update record high
             recordHigh.textContent = newRecord;
