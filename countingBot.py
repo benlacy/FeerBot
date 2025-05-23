@@ -150,7 +150,7 @@ class CountingBot(BaseBot):
                 "Content-Type": "application/json"
             }
             
-            data = {"data":{"user_id": user_id,"duration": duration,}}
+            data = {"data":{"user_id": user_id,"duration": duration,"reason": reason}}
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=data) as response:
@@ -212,6 +212,7 @@ class CountingBot(BaseBot):
                     await self.send_to_overlay(f"COUNT:{self.current_count}:{username}:{self.record_high}:{int(is_record)}")
                 else:
                     # Wrong number - reset the game and timeout the user
+                    right_number = self.expected_number
                     self.current_count = 0
                     self.expected_number = 1
                     self.last_user = username  # Update last user on reset too
@@ -219,7 +220,7 @@ class CountingBot(BaseBot):
                     # Send reset to overlay with username, record high, and no record flag
                     await self.send_to_overlay(f"COUNT:0:{username}:{self.record_high}:0")
                     # Timeout the user for getting the wrong number
-                    await self.timeout_user(user_id, username, reason="Wrong number in counting game")
+                    await self.timeout_user(user_id, username, reason=f"Wrong number ({number}). Expected ({right_number})")
                 
         except ValueError:
             # This shouldn't happen due to our regex check, but just in case
