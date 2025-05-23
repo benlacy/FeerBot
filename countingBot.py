@@ -169,7 +169,7 @@ class CountingBot(BaseBot):
         Uses a lock to ensure thread safety. If a user tries to count twice in a row,
         it's treated as a failure and resets the counter to 0.
         """
-        if message.echo:
+        if message.echo or message.author.display_name == "Nightbot":
             return
 
         # Get the message content and check if it contains a valid number
