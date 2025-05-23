@@ -4,6 +4,8 @@ import websockets
 import logging
 from twitchio.ext import commands
 from typing import Optional, List
+from dotenv import load_dotenv
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -27,6 +29,10 @@ class BaseBot(commands.Bot):
             channel_name: Twitch channel name to connect to
             require_client_id: Whether to require CLIENT_ID and CLIENT_SECRET
         """
+        # Find the .env file relative to this file's location
+        env_path = Path(__file__).parent / '.env'
+        load_dotenv(env_path)
+
         # Validate environment variables
         self.token = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
         self.client_id = os.getenv("TWITCH_APP_CLIENT_ID") if require_client_id else None

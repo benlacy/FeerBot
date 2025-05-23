@@ -220,7 +220,7 @@
         function createFloatingText(text, type) {
             const floatingText = document.createElement('div');
             floatingText.className = `floating-text ${type}`;
-            floatingText.textContent = type === 'correct' ? `+ ${text}` : `- ${text}`;
+            floatingText.textContent = type === 'reset' ? `- ${text}` : `+ ${text}`;
             
             // Add to body instead of counter to ensure proper stacking
             document.body.appendChild(floatingText);
