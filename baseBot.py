@@ -31,6 +31,8 @@ class BaseBot(commands.Bot):
         self.token = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
         self.client_id = os.getenv("TWITCH_APP_CLIENT_ID") if require_client_id else None
         self.client_secret = os.getenv("TWITCH_APP_CLIENT_SECRET") if require_client_id else None
+        self.bot_user_login = "Feer"
+        self.channel_name = "Feer"
         
         missing_vars = []
         if not self.token:

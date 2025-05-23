@@ -34,6 +34,43 @@
             position: relative;  /* For positioning the floating text */
         }
 
+        #record-high {
+            font-size: 120px;  /* Match counter font size */
+            font-weight: bold;
+            color: #ffd700;  /* Gold color for record */
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);  /* Match counter shadow */
+            padding: 30px 40px;  /* Match counter padding */
+            border-radius: 15px;
+            background: rgba(0, 0, 0, 0.6);
+            margin-left: 40px;  /* Increased margin to prevent overlap */
+            min-width: 200px;  /* Match counter min-width */
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;  /* For consistent positioning */
+        }
+
+        #record-high::before {
+            content: "Record";
+            font-size: 36px;  /* Increased font size for better proportion */
+            color: #ffffff;
+            margin-bottom: 10px;  /* Increased margin for better spacing */
+            position: absolute;
+            top: -40px;  /* Position above the box */
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        }
+
+        .counter-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .floating-text {
             position: absolute;
             font-size: 72px;
@@ -114,12 +151,12 @@
                 text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
             }
             10% { 
-                transform: scale(1.1);
+                transform: scale(1.05);  /* Reduced scale to match record flash */
                 background: rgba(0, 255, 0, 0.7);
                 text-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
             }
             70% { 
-                transform: scale(1.1);
+                transform: scale(1.05);  /* Reduced scale to match record flash */
                 background: rgba(0, 255, 0, 0.7);
                 text-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
             }
@@ -129,13 +166,53 @@
                 text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
             }
         }
+
+        #counter.record {
+            animation: record-flash 1.5s ease;
+        }
+
+        #record-high.record {
+            animation: record-flash 1.5s ease;
+        }
+
+        @keyframes record-flash {
+            0% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+            10% { 
+                transform: scale(1.05);  /* Reduced scale to prevent overlap */
+                background: rgba(255, 215, 0, 0.7);  /* Gold color */
+                text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            }
+            70% { 
+                transform: scale(1.05);  /* Reduced scale to prevent overlap */
+                background: rgba(255, 215, 0, 0.7);
+                text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            }
+            100% { 
+                transform: scale(1);
+                background: rgba(0, 0, 0, 0.6);
+                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            }
+        }
+
+        .floating-text.record {
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        }
     </style>
 </head>
 <body>
-    <div id="counter">0</div>
+    <div class="counter-container">
+        <div id="counter">0</div>
+        <div id="record-high">0</div>
+    </div>
 
     <script>
         const counter = document.getElementById('counter');
+        const recordHigh = document.getElementById('record-high');
         let ws = null;
         let reconnectTimeout = null;
         const wsUrl = 'ws://localhost:6790';
@@ -182,8 +259,8 @@
                 ws.onmessage = (event) => {
                     const message = event.data;
                     if (message.startsWith('COUNT:')) {
-                        const [_, count, user] = message.split(':');
-                        updateCounter(count, user);
+                        const [_, count, user, record, isRecord] = message.split(':');
+                        updateCounter(count, user, record, isRecord === '1');
                     }
                 };
 
@@ -205,9 +282,13 @@
             }
         }
 
-        function updateCounter(count, user) {
+        function updateCounter(count, user, record, isRecord) {
             const currentCount = parseInt(counter.textContent);
             const newCount = parseInt(count);
+            const newRecord = parseInt(record);
+            
+            // Update record high
+            recordHigh.textContent = newRecord;
             
             // If we're resetting to 0, add the reset animation
             if (currentCount !== 0 && newCount === 0) {
@@ -217,7 +298,20 @@
                 setTimeout(() => counter.classList.remove('reset'), 1500);
                 if (user) createFloatingText(user, 'reset');
             }
-            // If the number increased by 1, add the correct animation
+            // If this is a record update, add the record animation
+            else if (isRecord) {
+                // Force a reflow to ensure the animation restarts
+                void counter.offsetWidth;
+                void recordHigh.offsetWidth;
+                counter.classList.add('record');
+                recordHigh.classList.add('record');
+                setTimeout(() => {
+                    counter.classList.remove('record');
+                    recordHigh.classList.remove('record');
+                }, 1500);
+                if (user) createFloatingText(user, 'record');
+            }
+            // If the number increased by 1 (normal case), add the correct animation
             else if (newCount === currentCount + 1) {
                 // Force a reflow to ensure the animation restarts
                 void counter.offsetWidth;
