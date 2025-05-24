@@ -95,7 +95,16 @@ class CountingBot(BaseBot):
         except ValueError:
             return 0
 
-    def timeout_seconds(streak):
+    def timeout_seconds(self, streak: int) -> int:
+        """
+        Calculate timeout duration based on streak length.
+        
+        Args:
+            streak: The current streak length
+            
+        Returns:
+            int: Timeout duration in seconds
+        """
         timeout = 7.5 * (2 ** streak)
         return min(timeout, 86400)  # 24-hour cap
 

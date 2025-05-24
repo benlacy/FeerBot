@@ -209,12 +209,10 @@
         <div id="counter">0</div>
         <div id="record-high">0</div>
     </div>
-    <audio id="countSound" src="C:/Users/benjl/OneDrive/Documents/code/FeerBot/assets/meow.mp3" preload="auto"></audio>
 
     <script>
         const counter = document.getElementById('counter');
         const recordHigh = document.getElementById('record-high');
-        const countSound = document.getElementById('countSound');
         let ws = null;
         let reconnectTimeout = null;
         const wsUrl = 'ws://localhost:6790';
@@ -291,8 +289,16 @@
             
             // Play sound when count reaches 5
             if (newCount === 5) {
-                countSound.currentTime = 0; // Reset sound to start
-                countSound.play().catch(error => console.log('Error playing sound:', error));
+                // Play the sound every time a message is received
+                const messageSound = new Audio('../assets/five.mp3'); // Replace with your sound file path
+                messageSound.play();  // Play the sound
+            }
+
+            // Play sound when count reaches 5
+            if (newCount === 39) {
+                // Play the sound every time a message is received
+                const messageSound = new Audio('../assets/meow.mp3'); // Replace with your sound file path
+                messageSound.play();  // Play the sound
             }
             
             // Update record high

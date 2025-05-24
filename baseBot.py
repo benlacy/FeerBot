@@ -6,6 +6,7 @@ from twitchio.ext import commands
 from typing import Optional, List
 from dotenv import load_dotenv
 from pathlib import Path
+from credential_manager import CredentialManager
 
 # Configure logging
 logging.basicConfig(
@@ -29,12 +30,11 @@ class BaseBot(commands.Bot):
             channel_name: Twitch channel name to connect to
             require_client_id: Whether to require CLIENT_ID and CLIENT_SECRET
         """
-        # Find the .env file relative to this file's location
-        env_path = Path(__file__).parent / '.env'
-        load_dotenv(env_path)
-
+        # Initialize credential manager
+        self.cred_manager = CredentialManager()
+        
         # Validate environment variables
-        self.token = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
+        self.token = self.cred_manager.get_valid_token()
         self.client_id = os.getenv("TWITCH_APP_CLIENT_ID") if require_client_id else None
         self.client_secret = os.getenv("TWITCH_APP_CLIENT_SECRET") if require_client_id else None
         self.bot_user_login = "Feer"
@@ -62,10 +62,29 @@ class BaseBot(commands.Bot):
         # WebSocket settings
         self.overlay_ws_url = overlay_ws_url
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.token_refresh_task = None
+
+    async def _token_refresh_loop(self):
+        """Background task to periodically check and refresh token."""
+        while True:
+            try:
+                # Get a valid token (will refresh if needed)
+                token = self.cred_manager.get_valid_token()
+                if token and token != self.token:
+                    self.token = token
+                    # Reconnect the bot with new token
+                    await self.close()
+                    await self.start()
+                await asyncio.sleep(60)  # Check every minute
+            except Exception as e:
+                logger.error(f"Error in token refresh loop: {e}")
+                await asyncio.sleep(60)  # Wait before retrying
 
     async def event_ready(self):
         """Called when the bot is ready and connected to Twitch."""
         logger.info(f'Logged in as {self.nick}')
+        # Start token refresh task now that event loop is running
+        self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
         await self.connect_websocket()
 
     async def connect_websocket(self):
