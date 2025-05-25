@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Counting Streak Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: transparent;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #streak-container {
+            display: block;
+            column-count: 3;
+            column-gap: 10px;
+            padding: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+            height: 100vh;
+            column-fill: auto;
+            column-width: auto;
+        }
+
+        .streak-box {
+            color: #ffffff;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.5s ease-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            break-inside: avoid;
+            margin-bottom: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            page-break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+        }
+
+        .streak-box.normal {
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        .streak-box.correct {
+            background: rgba(0, 255, 0, 0.7);
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+        }
+
+        .streak-box.record {
+            background: rgba(255, 215, 0, 0.7);
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        }
+
+        .streak-box:hover {
+            transform: scale(1.05);
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .streak-box.reset {
+            animation: fadeOut 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+        }
+
+        /* Update media queries for better responsiveness */
+        @media (max-width: 600px) {
+            #streak-container {
+                column-count: 2;
+                max-width: 100%;
+            }
+        }
+
+        @media (max-width: 400px) {
+            #streak-container {
+                column-count: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="streak-container"></div>
+
+    <script>
+        const streakContainer = document.getElementById('streak-container');
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+        let currentStreak = [];
+
+        function createStreakBox(number, username, isRecord) {
+            const box = document.createElement('div');
+            box.className = 'streak-box';
+            box.classList.add(isRecord === '1' ? 'record' : 'correct');
+            box.textContent = `${number} - ${username}`;
+            return box;
+        }
+
+        function resetStreak() {
+            // Add reset animation to all boxes
+            const boxes = streakContainer.getElementsByClassName('streak-box');
+            Array.from(boxes).forEach(box => {
+                box.classList.add('reset');
+                // Remove the box after animation completes
+                box.addEventListener('animationend', () => box.remove());
+            });
+            currentStreak = [];
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to WebSocket server');
+                };
+
+                ws.onmessage = (event) => {
+                    const message = event.data;
+                    if (message.startsWith('COUNT:')) {
+                        const [_, count, user, record, isRecord] = message.split(':');
+                        console.log(`Count: ${count}, User: ${user}, Record: ${record}, IsRecord: ${isRecord}`);
+                        updateStreak(parseInt(count), user, isRecord);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        function updateStreak(count, username, isRecord) {
+            if (count === 0) {
+                resetStreak();
+                return;
+            }
+
+            // Add new box for the current count with appropriate styling
+            const box = createStreakBox(count, username, isRecord);
+            streakContainer.appendChild(box);
+            currentStreak.push({ number: count, username: username, isRecord: isRecord === '1' });
+        }
+
+        // Initial connection
+        connectWebSocket();
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html> 

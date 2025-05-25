@@ -22,7 +22,7 @@ class CountingBot(BaseBot):
             require_client_id=True
         )
         self.current_count = 0
-        self.record_high = 0  # Track the highest number reached
+        self.record_high = 38  # Track the highest number reached
         self.expected_number = 1  # The next number we're expecting to see
         self.current_streak_users = set()  # Track all users in the current streak
         self.update_lock = asyncio.Lock()  # Lock for thread-safe updates
@@ -105,7 +105,7 @@ class CountingBot(BaseBot):
         Returns:
             int: Timeout duration in seconds
         """
-        timeout = 7.5 * (2 ** streak)
+        timeout = 7.5 * (2 ** streak) + 1
         return min(timeout, 86400)  # 24-hour cap
 
     async def timeout_user(self, user_id: str, username: str, duration: int = TIMEOUT_DURATION, reason: str = "Wrong number in counting game"):
