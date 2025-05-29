@@ -108,55 +108,6 @@ class CountingBot(BaseBot):
         timeout = 7.5 * (2 ** streak) + 1
         return min(timeout, 86400)  # 24-hour cap
 
-    async def timeout_user(self, user_id: str, username: str, duration: int = TIMEOUT_DURATION, reason: str = "Wrong number in counting game"):
-        """
-        Timeout a user in the channel.
-        
-        Args:
-            user_id: The Twitch user ID to timeout
-            username: The username of the user (for logging)
-            duration: Duration of the timeout in seconds
-            reason: Reason for the timeout
-        """
-        try:
-            # Get broadcaster ID from the channel name
-            broadcaster_id = await self.get_user_id(self.channel_name)
-            if not broadcaster_id:
-                logger.error(f"Could not get broadcaster ID for {self.channel_name}")
-                return
-
-            # Get bot's user ID for the moderator ID
-            moderator_id = await self.get_user_id(self.nick)
-            if not moderator_id:
-                logger.error(f"Could not get moderator ID for {self.nick}")
-                return
-
-            # user_id = await self.get_user_id(username)
-            # if not user_id:
-            #     logger.error(f"Could not get user ID for {username}")
-            #     return
-
-            # Prepare the request
-            url = f"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={broadcaster_id}&moderator_id={moderator_id}"
-            headers = {
-                "Authorization": f"Bearer {self.token}",
-                "Client-Id": self.client_id,
-                "Content-Type": "application/json"
-            }
-            
-            data = {"data":{"user_id": user_id,"duration": duration,"reason": reason}}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        logger.info(f"Successfully timed out {username} for {duration} seconds")
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Failed to timeout {username}. Status: {response.status}, Error: {error_text}")
-
-        except Exception as e:
-            logger.error(f"Error timing out user {username}: {str(e)}")
-
     async def event_message(self, message):
         """
         Handle incoming messages and update the counter based on the counting game rules.

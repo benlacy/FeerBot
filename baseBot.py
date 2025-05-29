@@ -7,6 +7,7 @@ from typing import Optional, List
 from dotenv import load_dotenv
 from pathlib import Path
 from credential_manager import CredentialManager
+import aiohttp
 
 # Configure logging
 logging.basicConfig(
@@ -85,10 +86,17 @@ class BaseBot(commands.Bot):
         logger.info(f'Logged in as {self.nick}')
         # Start token refresh task now that event loop is running
         self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
-        await self.connect_websocket()
+        # Only connect to WebSocket if overlay URL is provided
+        if self.overlay_ws_url is not None:
+            await self.connect_websocket()
 
     async def connect_websocket(self):
         """Maintains a persistent WebSocket connection with exponential backoff."""
+        # Skip connection if no overlay URL is provided
+        if self.overlay_ws_url is None:
+            logger.info("No overlay WebSocket URL provided, skipping connection")
+            return
+
         retry_delay = 1
         max_delay = 30
         
@@ -117,6 +125,10 @@ class BaseBot(commands.Bot):
 
     async def send_to_overlay(self, text: str):
         """Send message using existing WebSocket connection."""
+        # Skip if no overlay URL is provided
+        if self.overlay_ws_url is None:
+            return
+
         if self.ws is None or self.ws.state != websockets.State.OPEN:
             logger.warning("WebSocket not connected. Attempting to reconnect...")
             await self.connect_websocket()
@@ -134,6 +146,50 @@ class BaseBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error sending message to overlay: {e}")
             self.ws = None
+
+    async def timeout_user(self, user_id: str, username: str, duration: int = 30, reason: str = "Timeout"):
+        """
+        Timeout a user in the channel.
+        
+        Args:
+            user_id: The Twitch user ID to timeout
+            username: The username of the user (for logging)
+            duration: Duration of the timeout in seconds
+            reason: Reason for the timeout
+        """
+        try:
+            # Get broadcaster ID from the channel name
+            broadcaster_id = await self.get_user_id(self.channel_name)
+            if not broadcaster_id:
+                logger.error(f"Could not get broadcaster ID for {self.channel_name}")
+                return
+
+            # Get bot's user ID for the moderator ID
+            moderator_id = await self.get_user_id(self.nick)
+            if not moderator_id:
+                logger.error(f"Could not get moderator ID for {self.nick}")
+                return
+
+            # Prepare the request
+            url = f"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={broadcaster_id}&moderator_id={moderator_id}"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id,
+                "Content-Type": "application/json"
+            }
+            
+            data = {"data":{"user_id": user_id,"duration": duration,"reason": reason}}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data) as response:
+                    if response.status == 200:
+                        logger.info(f"Successfully timed out {username} for {duration} seconds")
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Failed to timeout {username}. Status: {response.status}, Error: {error_text}")
+
+        except Exception as e:
+            logger.error(f"Error timing out user {username}: {str(e)}")
 
     async def event_message(self, message):
         """
