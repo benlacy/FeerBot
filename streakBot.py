@@ -2,6 +2,7 @@ from baseBot import BaseBot
 import logging
 import asyncio
 import re
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +25,16 @@ class StreakBot(BaseBot):
 
     def is_valid_message(self, content: str) -> bool:
         """
-        Check if a message contains only valid messages separated by whitespace.
+        Check if a message starts with any of the valid messages.
         
         Args:
             content: The message content to check
             
         Returns:
-            bool: True if the message only contains valid messages and whitespace
+            bool: True if the message starts with any valid message
         """
-        # Split the message by whitespace and check each part
-        parts = content.split()
-        # Check if all non-empty parts are valid messages
-        return all(part in self.valid_messages for part in parts if part)
+        # Check if the message starts with any valid message
+        return any(content.startswith(msg) for msg in self.valid_messages)
 
     def timeout_seconds(self, streak: int) -> int:
         """
@@ -49,7 +48,39 @@ class StreakBot(BaseBot):
         """
         timeout = 7.5 * (2 ** streak) + 1
         return min(timeout, 86400)  # 24-hour cap
-
+    async def get_user_id(self, username: str) -> str:
+            """
+            Get a Twitch user's ID from their username using the Twitch API.
+            
+            Args:
+                username: The Twitch username to look up
+                
+            Returns:
+                str: The user's ID if found, None otherwise
+            """
+            try:
+                url = f"https://api.twitch.tv/helix/users?login={username}"
+                headers = {
+                    "Authorization": f"Bearer {self.token}",
+                    "Client-Id": self.client_id
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if data.get('data') and len(data['data']) > 0:
+                                return data['data'][0]['id']
+                            logger.error(f"No user found with username: {username}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"Failed to get user ID for {username}. Status: {response.status}, Error: {error_text}")
+                            return None
+                            
+            except Exception as e:
+                logger.error(f"Error getting user ID for {username}: {str(e)}")
+                return None
     async def event_message(self, message):
         """
         Handle incoming messages and update the streak based on unique users sending the target message.
@@ -81,7 +112,7 @@ class StreakBot(BaseBot):
                 self.current_streak = 0
                 self.participating_users.clear()
                 
-                if streak_broken >= 3:
+                if streak_broken >= 5:
                     # Calculate timeout and inform chat
                     timeout_duration = self.timeout_seconds(streak_broken)
                     await message.channel.send(f"dsc_1439 {streak_broken} dsc_1439 . Bad @{username}, be gone.")

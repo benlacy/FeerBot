@@ -9,20 +9,6 @@ logger = logging.getLogger(__name__)
 # WebSocket Server URL (to send messages to the overlay)
 OVERLAY_WS = "ws://localhost:6790"
 
-# Replace with your bot's details
-TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
-CLIENT_ID = os.getenv("TWITCH_APP_CLIENT_ID")  # Add this to your environment variables
-CLIENT_SECRET = os.getenv("TWITCH_APP_CLIENT_SECRET")
-CHANNEL_NAME = "Feer"
-
-if not TOKEN or not CLIENT_ID or not CLIENT_SECRET:
-    print("FATAL ERROR: TOKEN ENV NOT SET")
-    exit()
-
-# NICK = 'FeerBot'
-PREFIX = '!'
-CHANNELS = [CHANNEL_NAME]
-
 quick_chat_messages = [
     "$H@%!", "All yours.", "Bumping!", "Calculated.", "Centering!", "Close one!",
     "Defending...", "Everybody Dance!", "Faking.", "gg", "Go for it!", "Good luck!",
