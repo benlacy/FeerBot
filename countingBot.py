@@ -27,40 +27,6 @@ class CountingBot(BaseBot):
         self.current_streak_users = set()  # Track all users in the current streak
         self.update_lock = asyncio.Lock()  # Lock for thread-safe updates
 
-    async def get_user_id(self, username: str) -> str:
-        """
-        Get a Twitch user's ID from their username using the Twitch API.
-        
-        Args:
-            username: The Twitch username to look up
-            
-        Returns:
-            str: The user's ID if found, None otherwise
-        """
-        try:
-            url = f"https://api.twitch.tv/helix/users?login={username}"
-            headers = {
-                "Authorization": f"Bearer {self.token}",
-                "Client-Id": self.client_id
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data.get('data') and len(data['data']) > 0:
-                            return data['data'][0]['id']
-                        logger.error(f"No user found with username: {username}")
-                        return None
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Failed to get user ID for {username}. Status: {response.status}, Error: {error_text}")
-                        return None
-                        
-        except Exception as e:
-            logger.error(f"Error getting user ID for {username}: {str(e)}")
-            return None
-
     def is_valid_number(self, message: str) -> bool:
         """
         Check if the message is purely a positive integer.
