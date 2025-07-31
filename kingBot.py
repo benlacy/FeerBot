@@ -8,11 +8,11 @@ logger = logging.getLogger(__name__)
 class KingBot(BaseBot):
     def __init__(self):
         super().__init__(
-            overlay_ws_url=None,  # No overlay for now
+            overlay_ws_url="ws://localhost:6790",  # Use the server.py WebSocket server
             prefix='!',
             channel_name="Feer"
         )
-        self.king_username = "sleazebreeze"  # Replace with the actual king's username
+        self.king_username = "itsjorge_"  # Replace with the actual king's username
         self.pray_mode = False
         self.pray_streak = 0
         self.pray_high_streak = 0
@@ -84,21 +84,43 @@ class KingBot(BaseBot):
             self.type_mode = True
             self.type_streak = 0
             self.type_high_streak = 0
-            await ctx.send(f"TYPE CHALLENGE! The King demands you type: {self.type_word}")
+            await ctx.send(f"=====👑The King of Marbles👑=====")
+            await ctx.send(f"CHAT IS IN {self.type_word} MODE FOR 30s")
+            await ctx.send(f"=============================")
             self.type_task = asyncio.create_task(self._type_timer(ctx))
 
     async def _type_timer(self, ctx):
         await asyncio.sleep(30)
         async with self.type_lock:
             if self.type_mode:
-                await ctx.send(f"Type session complete! Highest streak: {self.type_high_streak}")
+                await ctx.send(f"=====👑The King of Marbles👑=====")
+                await ctx.send(f"{self.type_word} MODE OFF. HIGHEST STREAK: {self.type_high_streak}")
+                await ctx.send(f"=============================")
+                # await ctx.send(f"Type session complete! Highest streak: {self.type_high_streak}")
                 self.type_mode = False
                 self.type_word = None
                 self.type_streak = 0
                 self.type_high_streak = 0
 
+    @commands.command(name="banish")
+    async def banish_command(self, ctx: commands.Context):
+        if ctx.author.display_name != self.king_username:
+            await ctx.send("Only the King can banish subjects!")
+            return
+        args = ctx.message.content.split()
+        if len(args) < 2:
+            await ctx.send("Usage: !banish <username>")
+            return
+        target_username = args[1].lstrip('@')
+        user_id = await self.get_user_id(target_username)
+        if not user_id:
+            await ctx.send(f"Could not find user: {target_username}")
+            return
+        await self.timeout_user(user_id, target_username, duration=300, reason="Banished by the King!")
+        await ctx.send(f"{target_username} has been banished for 5 minutes!")
+
     def timeout_seconds(self, streak: int) -> int:
-        timeout = 7.5 * (2 ** streak) + 1
+        timeout = (7.5 * (2 ** streak)) + 1
         return min(timeout, 86400)  # 24-hour cap
 
     async def event_message(self, message):
@@ -117,7 +139,7 @@ class KingBot(BaseBot):
                 else:
                     streak_broken = self.pray_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
-                    await message.channel.send(f"Pray {streak_broken} ReallyMad  @{username}")
+                    await message.channel.send(f"Pray {streak_broken} KingOfTheMarbles BANNED @{username}")
                     await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke pray streak of {streak_broken}")
                     self.pray_streak = 0
         
@@ -134,7 +156,7 @@ class KingBot(BaseBot):
                 else:
                     streak_broken = self.polish_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
-                    await message.channel.send(f"POLISH {streak_broken} ReallyMad @{username} POLISH")
+                    await message.channel.send(f"POLISH {streak_broken} KingOfTheMarbles BANNED @{username}")
                     await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke POLISH streak of {streak_broken}")
                     self.polish_streak = 0
 
@@ -151,11 +173,22 @@ class KingBot(BaseBot):
                 else:
                     streak_broken = self.type_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
-                    await message.channel.send(f"{self.type_word} {streak_broken} ReallyMad @{username} {self.type_word}")
+                    await message.channel.send(f"{self.type_word} {streak_broken} KingOfTheMarbles BANNED @{username}")
                     await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke TYPE streak of {streak_broken}")
                     self.type_streak = 0
 
         await self.handle_commands(message)
+
+    async def event_ready(self):
+        await super().event_ready()
+        # Send king info to overlay on startup
+        await self.send_king_to_overlay()
+        logger.debug(f"Bot is ready. Current king: {self.king_username}")
+
+    async def send_king_to_overlay(self):
+        import json
+        data = {"king": self.king_username}
+        await self.send_to_overlay(json.dumps(data))
 
 if __name__ == "__main__":
     bot = KingBot()

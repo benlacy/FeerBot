@@ -88,7 +88,8 @@ class BaseBot(commands.Bot):
         self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
         # Only connect to WebSocket if overlay URL is provided
         if self.overlay_ws_url is not None:
-            await self.connect_websocket()
+            self.websocket_task = asyncio.create_task(self.connect_websocket())
+            await asyncio.sleep(1.5)
 
     async def connect_websocket(self):
         """Maintains a persistent WebSocket connection with exponential backoff."""

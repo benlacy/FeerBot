@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>King of Marbles Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        .king-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .king-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 10px 20px 10px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            border: 2px solid #ffd700;
+        }
+
+        .crown {
+            font-size: 36px;
+            margin-right: 10px;
+            color: #ffd700;
+        }
+
+        .king-name {
+            font-size: 32px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        .actual-king {
+            font-size: 36px;
+            font-weight: bold;
+            color: #ffd700;
+            margin-top: 8px;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="king-container">
+        <div class="king-box">
+            <div class="king-name" id="king-name">👑 King of Marbles</div>
+            <div class="actual-king" id="actual-king">Feer</div>
+        </div>
+    </div>
+    <script>
+        const kingNameElem = document.getElementById('king-name');
+        const actualKingElem = document.getElementById('actual-king');
+        const ws = new WebSocket('ws://localhost:6790');
+        ws.onopen = () => {
+            console.log('Connected to king info WebSocket');
+        };
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.king) {
+                    actualKingElem.textContent = data.king;
+                }
+            } catch (e) {
+                console.error('Invalid message from server:', event.data);
+            }
+        };
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+        };
+        ws.onclose = () => {
+            console.warn('WebSocket connection closed');
+        };
+    </script>
+</body>
+</html> 
