@@ -22,7 +22,7 @@ class CountingBot(BaseBot):
             require_client_id=True
         )
         self.current_count = 0
-        self.record_high = 38  # Track the highest number reached
+        self.record_high = 0#38  # Track the highest number reached
         self.expected_number = 1  # The next number we're expecting to see
         self.current_streak_users = set()  # Track all users in the current streak
         self.update_lock = asyncio.Lock()  # Lock for thread-safe updates

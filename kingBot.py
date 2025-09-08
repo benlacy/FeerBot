@@ -12,7 +12,8 @@ class KingBot(BaseBot):
             prefix='!',
             channel_name="Feer"
         )
-        self.king_username = "itsjorge_"  # Replace with the actual king's username
+
+        self.king_username = "Agonizingpoo"  # Replace with the actual king's username
         self.pray_mode = False
         self.pray_streak = 0
         self.pray_high_streak = 0
@@ -62,7 +63,7 @@ class KingBot(BaseBot):
 
     @commands.command(name="king")
     async def king_command(self, ctx: commands.Context):
-        await ctx.send(f"All Hail the King of Marbles: @{self.king_username}")
+        await ctx.send(f"Pray @{self.king_username} Pray KingOfTheMarbles Pray")
 
     async def _polish_timer(self, ctx):
         await asyncio.sleep(30)
@@ -123,9 +124,18 @@ class KingBot(BaseBot):
         timeout = (7.5 * (2 ** streak)) + 1
         return min(timeout, 86400)  # 24-hour cap
 
+    async def upon_connection(self):
+        await self.send_king_to_overlay()
+        pass 
+
     async def event_message(self, message):
-        if message.echo or message.author.display_name == "Nightbot" or (hasattr(message.author, "is_mod") and message.author.is_mod):
+        if message.echo or message.author.display_name == "Nightbot":
             return
+        
+        is_mod = False
+        if (hasattr(message.author, "is_mod") and message.author.is_mod):
+            is_mod = True
+
         # Pray mode logic
         if self.pray_mode and message.author and message.author.display_name != self.king_username:
             content = message.content.strip()
@@ -140,7 +150,8 @@ class KingBot(BaseBot):
                     streak_broken = self.pray_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
                     await message.channel.send(f"Pray {streak_broken} KingOfTheMarbles BANNED @{username}")
-                    await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke pray streak of {streak_broken}")
+                    if not is_mod:
+                        await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke pray streak of {streak_broken}")
                     self.pray_streak = 0
         
         # Polish mode logic
@@ -157,7 +168,8 @@ class KingBot(BaseBot):
                     streak_broken = self.polish_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
                     await message.channel.send(f"POLISH {streak_broken} KingOfTheMarbles BANNED @{username}")
-                    await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke POLISH streak of {streak_broken}")
+                    if not is_mod:
+                        await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke POLISH streak of {streak_broken}")
                     self.polish_streak = 0
 
         # Type mode logic
@@ -174,21 +186,32 @@ class KingBot(BaseBot):
                     streak_broken = self.type_streak
                     timeout_duration = self.timeout_seconds(streak_broken)
                     await message.channel.send(f"{self.type_word} {streak_broken} KingOfTheMarbles BANNED @{username}")
-                    await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke TYPE streak of {streak_broken}")
+                    if not is_mod:
+                        await self.timeout_user(user_id, username, duration=timeout_duration, reason=f"Broke TYPE streak of {streak_broken}")
                     self.type_streak = 0
 
         await self.handle_commands(message)
 
     async def event_ready(self):
         await super().event_ready()
-        # Send king info to overlay on startup
-        await self.send_king_to_overlay()
         logger.debug(f"Bot is ready. Current king: {self.king_username}")
 
     async def send_king_to_overlay(self):
         import json
         data = {"king": self.king_username}
         await self.send_to_overlay(json.dumps(data))
+
+        try:
+            async for message in self.ws:
+                try:
+                    msg_data = json.loads(message)
+                    if isinstance(msg_data, dict) and msg_data.get("action") == "get_king":
+                        await self.send_to_overlay(json.dumps(data))
+                except Exception as e:
+                    logger.warning(f"Invalid king overlay message: {message} ({e})")
+
+        except Exception as e:
+            logger.error(f"Unexpected error king bot: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
     bot = KingBot()

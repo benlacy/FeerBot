@@ -61,7 +61,7 @@
     <div class="king-container">
         <div class="king-box">
             <div class="king-name" id="king-name">👑 King of Marbles</div>
-            <div class="actual-king" id="actual-king">Feer</div>
+            <div class="actual-king" id="actual-king"></div>
         </div>
     </div>
     <script>
@@ -70,6 +70,8 @@
         const ws = new WebSocket('ws://localhost:6790');
         ws.onopen = () => {
             console.log('Connected to king info WebSocket');
+            // Request current king data upon connection
+            ws.send(JSON.stringify({ action: 'get_king' }));
         };
         ws.onmessage = (event) => {
             try {
