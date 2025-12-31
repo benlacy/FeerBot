@@ -294,7 +294,9 @@
                 messageSound.play();  // Play the sound
             }
 
-            // Play sound when count reaches 5
+
+            
+            // Play sound when count reaches 39
             if (newCount === 39) {
                 // Play the sound every time a message is received
                 const messageSound = new Audio('../assets/meow.mp3'); // Replace with your sound file path
@@ -306,6 +308,22 @@
             
             // If we're resetting to 0, add the reset animation
             if (currentCount !== 0 && newCount === 0) {
+
+                // Play the sound every time the count is reset, with volume based on how high the count was
+                const messageSound = new Audio('../assets/oof.mp3'); // Replace with your sound file path
+                // At count 1, volume is 1 (default). For higher counts, increase volume up to 2.5x (capped)
+                let failVolume = Math.min(2.5, 1 + (currentCount - 1) * 0.1);
+                messageSound.volume = Math.min(1, failVolume); // Set to 1 for browser, but...
+                messageSound.play();
+                // If browser supports, try to boost gain after play (Web Audio API)
+                if (failVolume > 1 && window.AudioContext) {
+                    const ctx = new AudioContext();
+                    const source = ctx.createMediaElementSource(messageSound);
+                    const gain = ctx.createGain();
+                    gain.gain.value = failVolume;
+                    source.connect(gain).connect(ctx.destination);
+                }
+
                 // Force a reflow to ensure the animation restarts
                 void counter.offsetWidth;
                 counter.classList.add('reset');
@@ -314,6 +332,10 @@
             }
             // If this is a record update, add the record animation
             else if (isRecord) {
+                // Play the sound every time a new record is hit
+                const messageSound = new Audio('../assets/newrecord.mp3'); // Replace with your sound file path
+                messageSound.play();  // Play the sound
+
                 // Force a reflow to ensure the animation restarts
                 void counter.offsetWidth;
                 void recordHigh.offsetWidth;
@@ -327,6 +349,12 @@
             }
             // If the number increased by 1 (normal case), add the correct animation
             else if (newCount === currentCount + 1) {
+
+                // Play the sound every time a message is received, at 50% volume
+                const messageSound = new Audio('../assets/sonic-ring.mp3'); // Replace with your sound file path
+                messageSound.volume = 0.1; // Set volume to 10%
+                messageSound.play();  // Play the sound
+
                 // Force a reflow to ensure the animation restarts
                 void counter.offsetWidth;
                 counter.classList.add('correct');

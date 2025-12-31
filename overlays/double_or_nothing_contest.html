@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Double or Nothing Contest</title>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .player {
+      width: 140px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 1rem;
+      position: relative;
+      overflow: hidden;
+      border-radius: 8px;
+      cursor: move;
+      transition: transform 0.2s;
+    }
+    
+    .player:hover {
+      transform: scale(1.05);
+    }
+    
+    .player::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.7;
+      background-size: cover;
+      background-position: center;
+      z-index: 0;
+    }
+    
+    .player span {
+      position: relative;
+      z-index: 1;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+      text-align: center;
+    }
+    
+    .player .flag {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 20px;
+      height: 15px;
+      border-radius: 2px;
+      z-index: 2;
+    }
+    
+    /* Flag backgrounds */
+    .be-flag::before { background-image: url('https://flagcdn.com/w160/be.png'); }
+    .es-flag::before { background-image: url('https://flagcdn.com/w160/es.png'); }
+    .ma-flag::before { background-image: url('https://flagcdn.com/w160/ma.png'); }
+    .sa-flag::before { background-image: url('https://flagcdn.com/w160/sa.png'); }
+    .nl-flag::before { background-image: url('https://flagcdn.com/w160/nl.png'); }
+    .fr-flag::before { background-image: url('https://flagcdn.com/w160/fr.png'); }
+    .gb-flag::before { background-image: url('https://flagcdn.com/w160/gb.png'); }
+    .eng-flag::before { background-image: url('https://flagcdn.com/w160/gb-eng.png'); }
+    .de-flag::before { background-image: url('https://flagcdn.com/w160/de.png'); }
+    .dk-flag::before { background-image: url('https://flagcdn.com/w160/dk.png'); }
+    
+    .match-row {
+      background: rgba(55, 65, 81, 0.5);
+      border: 1px solid rgba(75, 85, 99, 0.5);
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: background-color 0.3s;
+    }
+    
+    .match-row.won {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+    
+    .match-row.lost {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+    
+    .money-input {
+      background: rgba(31, 41, 55, 0.8);
+      border: 1px solid rgba(75, 85, 99, 0.5);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      width: 120px;
+      text-align: center;
+    }
+    
+    .money-input:focus {
+      outline: none;
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2);
+    }
+    
+    .score-input-container {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 24px;
+      font-weight: bold;
+      height: 70px;
+    }
+    
+    .score-input {
+      width: 60px;
+      height: 50px;
+      background: rgba(31, 41, 55, 0.8);
+      border: 1px solid rgba(75, 85, 99, 0.5);
+      color: white;
+      text-align: center;
+      border-radius: 6px;
+      font-size: 20px;
+      font-weight: bold;
+      -moz-appearance: textfield;
+    }
+    
+    .score-input::-webkit-outer-spin-button,
+    .score-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    
+    .score-input:focus {
+      outline: none;
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2);
+    }
+    
+    .money-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: #fbbf24;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+    
+    
+    
+    .opponent-slot {
+      min-width: 140px;
+      min-height: 70px;
+      border: 2px dashed rgba(156, 163, 175, 0.5);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(55, 65, 81, 0.2);
+    }
+    
+    .opponent-slot.dragover {
+      border-color: #fbbf24;
+      background: rgba(251, 191, 36, 0.1);
+    }
+    
+    .sortable-ghost {
+      opacity: 0.4;
+    }
+    
+    .sortable-chosen {
+      transform: rotate(5deg);
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white py-8">
+  <div class="max-w-6xl mx-auto px-4">
+    <h1 class="text-4xl font-bold mb-8 text-center text-yellow-400">DOUBLE OR NOTHING CONTEST</h1>
+
+    <!-- Participant Pool -->
+    <div class="bg-gray-800 shadow rounded p-6 mb-8">
+      <h2 class="text-2xl font-semibold mb-4 text-yellow-400">Participant Pool</h2>
+      <div id="participant-pool" class="flex flex-wrap gap-3 min-h-[80px]">
+        <div class="player be-flag rounded cursor-move" data-name="ATOW" data-flag="be">
+          <span>ATOW</span>
+          <img class="flag" src="https://flagcdn.com/20x15/be.png" alt="BE">
+        </div>
+        <div class="player es-flag rounded cursor-move" data-name="CRR" data-flag="es">
+          <span>CRR</span>
+          <img class="flag" src="https://flagcdn.com/20x15/es.png" alt="ES">
+        </div>
+        <div class="player ma-flag rounded cursor-move" data-name="DRALII" data-flag="ma">
+          <span>DRALII</span>
+          <img class="flag" src="https://flagcdn.com/20x15/ma.png" alt="MA">
+        </div>
+        <div class="player sa-flag rounded cursor-move" data-name="DRKNOWN" data-flag="sa">
+          <span>DRKNOWN</span>
+          <img class="flag" src="https://flagcdn.com/20x15/sa.png" alt="SA">
+        </div>
+        <div class="player nl-flag rounded cursor-move" data-name="JOREUZ" data-flag="nl">
+          <span>JOREUZ</span>
+          <img class="flag" src="https://flagcdn.com/20x15/nl.png" alt="NL">
+        </div>
+        <div class="player fr-flag rounded cursor-move" data-name="MAWKZY" data-flag="fr">
+          <span>MAWKZY</span>
+          <img class="flag" src="https://flagcdn.com/20x15/fr.png" alt="FR">
+        </div>
+        <div class="player eng-flag rounded cursor-move" data-name="JOYO" data-flag="gb-eng">
+          <span>JOYO</span>
+          <img class="flag" src="https://flagcdn.com/20x15/gb-eng.png" alt="ENG">
+        </div>
+        <div class="player ma-flag rounded cursor-move" data-name="NASS" data-flag="ma">
+          <span>NASS</span>
+          <img class="flag" src="https://flagcdn.com/20x15/ma.png" alt="MA">
+        </div>
+        <div class="player fr-flag rounded cursor-move" data-name="JUICY" data-flag="fr">
+          <span>JUICY</span>
+          <img class="flag" src="https://flagcdn.com/20x15/fr.png" alt="FR">
+        </div>
+        <div class="player eng-flag rounded cursor-move" data-name="REBMOB" data-flag="gb-eng">
+          <span>REBMOB</span>
+          <img class="flag" src="https://flagcdn.com/20x15/gb-eng.png" alt="ENG">
+        </div>
+        <div class="player eng-flag rounded cursor-move" data-name="RISE" data-flag="gb-eng">
+          <span>RISE</span>
+          <img class="flag" src="https://flagcdn.com/20x15/gb-eng.png" alt="ENG">
+        </div>
+        <div class="player fr-flag rounded cursor-move" data-name="VATIRA" data-flag="fr">
+          <span>VATIRA</span>
+          <img class="flag" src="https://flagcdn.com/20x15/fr.png" alt="FR">
+        </div>
+        <div class="player de-flag rounded cursor-move" data-name="REZEARS" data-flag="de">
+          <span>REZEARS</span>
+          <img class="flag" src="https://flagcdn.com/20x15/de.png" alt="DE">
+        </div>
+        <div class="player sa-flag rounded cursor-move" data-name="NUSH" data-flag="sa">
+          <span>NUSH</span>
+          <img class="flag" src="https://flagcdn.com/20x15/sa.png" alt="SA">
+        </div>
+        <div class="player dk-flag rounded cursor-move" data-name="TEMPOH" data-flag="dk">
+          <span>TEMPOH</span>
+          <img class="flag" src="https://flagcdn.com/20x15/dk.png" alt="DK">
+        </div>
+      </div>
+    </div>
+
+    <!-- Current Player Section -->
+    <div class="bg-gray-800 shadow rounded p-6 mb-8">
+      <h2 class="text-2xl font-semibold mb-4 text-yellow-400">Current Player</h2>
+      <div class="flex justify-start items-center">
+        <div id="current-player" class="opponent-slot min-w-[180px] min-h-[90px] flex items-center justify-center">
+        </div>
+      </div>
+    </div>
+
+    <!-- Match History -->
+    <div class="bg-gray-800 shadow rounded p-6">
+      <h2 class="text-2xl font-semibold mb-4 text-yellow-400">Match History</h2>
+      
+      <!-- Level 1 -->
+      <div class="match-row" id="match-row-1">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 1:</span>
+          <div id="opponent-1" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-1" onchange="updateMatchResult(1)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-1" onchange="updateMatchResult(1)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$62.50</span>
+        </div>
+      </div>
+
+      <!-- Level 2 -->
+      <div class="match-row" id="match-row-2">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 2:</span>
+          <div id="opponent-2" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-2" onchange="updateMatchResult(2)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-2" onchange="updateMatchResult(2)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$125.00</span>
+        </div>
+      </div>
+
+      <!-- Level 3 -->
+      <div class="match-row" id="match-row-3">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 3:</span>
+          <div id="opponent-3" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-3" onchange="updateMatchResult(3)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-3" onchange="updateMatchResult(3)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$250.00</span>
+        </div>
+      </div>
+
+      <!-- Visual Separator -->
+      <div class="border-t-2 border-yellow-400 my-6"></div>
+
+      <!-- Level 4 -->
+      <div class="match-row" id="match-row-4">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 4:</span>
+          <div id="opponent-4" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-4" onchange="updateMatchResult(4)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-4" onchange="updateMatchResult(4)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$500.00</span>
+        </div>
+      </div>
+
+      <!-- Level 5 -->
+      <div class="match-row" id="match-row-5">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 5:</span>
+          <div id="opponent-5" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-5" onchange="updateMatchResult(5)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-5" onchange="updateMatchResult(5)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$1,000.00</span>
+        </div>
+      </div>
+
+      <!-- Visual Separator -->
+      <div class="border-t-2 border-yellow-400 my-6"></div>
+
+      <!-- Level 6 -->
+      <div class="match-row" id="match-row-6">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 6:</span>
+          <div id="opponent-6" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-6" onchange="updateMatchResult(6)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-6" onchange="updateMatchResult(6)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$2,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 7 -->
+      <div class="match-row" id="match-row-7">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 7:</span>
+          <div id="opponent-7" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-7" onchange="updateMatchResult(7)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-7" onchange="updateMatchResult(7)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$4,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 8 -->
+      <div class="match-row" id="match-row-8">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 8:</span>
+          <div id="opponent-8" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-8" onchange="updateMatchResult(8)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-8" onchange="updateMatchResult(8)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$8,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 9 -->
+      <div class="match-row" id="match-row-9">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 9:</span>
+          <div id="opponent-9" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-9" onchange="updateMatchResult(9)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-9" onchange="updateMatchResult(9)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$16,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 10 -->
+      <div class="match-row" id="match-row-10">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 10:</span>
+          <div id="opponent-10" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-10" onchange="updateMatchResult(10)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-10" onchange="updateMatchResult(10)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$32,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 11 -->
+      <div class="match-row" id="match-row-11">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 11:</span>
+          <div id="opponent-11" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-11" onchange="updateMatchResult(11)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-11" onchange="updateMatchResult(11)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$64,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 12 -->
+      <div class="match-row" id="match-row-12">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 12:</span>
+          <div id="opponent-12" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-12" onchange="updateMatchResult(12)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-12" onchange="updateMatchResult(12)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$128,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 13 -->
+      <div class="match-row" id="match-row-13">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 13:</span>
+          <div id="opponent-13" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-13" onchange="updateMatchResult(13)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-13" onchange="updateMatchResult(13)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$256,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 14 -->
+      <div class="match-row" id="match-row-14">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 14:</span>
+          <div id="opponent-14" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-14" onchange="updateMatchResult(14)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-14" onchange="updateMatchResult(14)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$512,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 15 -->
+      <div class="match-row" id="match-row-15">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 15:</span>
+          <div id="opponent-15" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-15" onchange="updateMatchResult(15)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-15" onchange="updateMatchResult(15)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$1,024,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 16 -->
+      <div class="match-row" id="match-row-16">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 16:</span>
+          <div id="opponent-16" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-16" onchange="updateMatchResult(16)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-16" onchange="updateMatchResult(16)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$2,048,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 17 -->
+      <div class="match-row" id="match-row-17">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 17:</span>
+          <div id="opponent-17" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-17" onchange="updateMatchResult(17)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-17" onchange="updateMatchResult(17)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$4,096,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 18 -->
+      <div class="match-row" id="match-row-18">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 18:</span>
+          <div id="opponent-18" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-18" onchange="updateMatchResult(18)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-18" onchange="updateMatchResult(18)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$8,192,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 19 -->
+      <div class="match-row" id="match-row-19">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 19:</span>
+          <div id="opponent-19" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-19" onchange="updateMatchResult(19)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-19" onchange="updateMatchResult(19)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$16,384,000.00</span>
+        </div>
+      </div>
+
+      <!-- Level 20 -->
+      <div class="match-row" id="match-row-20">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-medium w-20">Level 20:</span>
+          <div id="opponent-20" class="opponent-slot"></div>
+          <div class="score-input-container">
+            <span>W</span>
+            <input type="number" class="score-input" id="wins-20" onchange="updateMatchResult(20)" min="0">
+            <span>-</span>
+            <input type="number" class="score-input" id="losses-20" onchange="updateMatchResult(20)" min="0">
+            <span>L</span>
+          </div>
+          <span class="money-amount">$32,768,000.00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize sortable for participant pool
+    const participantPool = document.getElementById('participant-pool');
+    new Sortable(participantPool, {
+      group: 'shared',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen'
+    });
+
+    // Initialize sortable for current player
+    const currentPlayer = document.getElementById('current-player');
+    new Sortable(currentPlayer, {
+      group: 'shared',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      onAdd: function(evt) {
+        const player = evt.item;
+        const playerName = player.getAttribute('data-name');
+        const playerFlag = player.getAttribute('data-flag');
+        
+        // Update the player display
+        player.innerHTML = `<span>${playerName}</span><img class="flag" src="https://flagcdn.com/20x15/${playerFlag}.png" alt="${playerFlag}">`;
+      }
+    });
+
+    // Initialize sortable for each opponent slot
+    for (let i = 1; i <= 20; i++) {
+      const opponentSlot = document.getElementById(`opponent-${i}`);
+      
+      new Sortable(opponentSlot, {
+        group: 'shared',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        onAdd: function(evt) {
+          const player = evt.item;
+          const playerName = player.getAttribute('data-name');
+          const playerFlag = player.getAttribute('data-flag');
+          
+          // Update the opponent display
+          player.innerHTML = `<span>${playerName}</span><img class="flag" src="https://flagcdn.com/20x15/${playerFlag}.png" alt="${playerFlag}">`;
+          opponentSlot.classList.remove('opponent-slot');
+          opponentSlot.style.border = 'none';
+          opponentSlot.style.background = 'none';
+        },
+        onRemove: function(evt) {
+          // Reset the slot when player is removed
+          opponentSlot.innerHTML = '';
+          opponentSlot.classList.add('opponent-slot');
+          opponentSlot.style.border = '2px dashed rgba(156, 163, 175, 0.5)';
+          opponentSlot.style.background = 'rgba(55, 65, 81, 0.2)';
+        }
+      });
+    }
+
+    // Add drag over effects
+    document.querySelectorAll('.opponent-slot').forEach(slot => {
+      slot.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('dragover');
+      });
+      
+      slot.addEventListener('dragleave', function(e) {
+        this.classList.remove('dragover');
+      });
+    });
+
+    // Function to update match result and row color
+    function updateMatchResult(matchNumber) {
+      const winsInput = document.getElementById(`wins-${matchNumber}`);
+      const lossesInput = document.getElementById(`losses-${matchNumber}`);
+      const matchRow = document.getElementById(`match-row-${matchNumber}`);
+      
+      // Remove existing classes
+      matchRow.classList.remove('won', 'lost');
+      
+      const wins = parseInt(winsInput.value) || 0;
+      const losses = parseInt(lossesInput.value) || 0;
+      
+      // Apply appropriate class based on comparison
+      if (wins > losses) {
+        matchRow.classList.add('won');
+      } else if (losses > wins) {
+        matchRow.classList.add('lost');
+      }
+    }
+
+
+  </script>
+</body>
+</html>

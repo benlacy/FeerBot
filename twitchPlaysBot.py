@@ -1,4 +1,3 @@
-import os
 import vgamepad as vg
 import asyncio
 from baseBot import BaseBot
@@ -6,24 +5,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# WebSocket Server URL (to send messages to the overlay)
-OVERLAY_WS = "ws://localhost:6788"
-
-# === Environment Variables ===
-TOKEN = os.getenv("TWITCH_BOT_ACCESS_TOKEN")
-CLIENT_ID = os.getenv("TWITCH_APP_CLIENT_ID")
-CLIENT_SECRET = os.getenv("TWITCH_APP_CLIENT_SECRET")
-CHANNEL_NAME = "Feer"
-PREFIX = '!'
-CHANNELS = [CHANNEL_NAME]
-
-if not TOKEN or not CLIENT_ID or not CLIENT_SECRET:
-    print("FATAL ERROR: TOKEN ENV NOT SET")
-    exit()
-
 # === Virtual Gamepads ===
-p1_gamepad = vg.VX360Gamepad()
-p2_gamepad = vg.VX360Gamepad()
+# Gamepads will be initialized in the bot class to handle ViGEmBus connection issues
 
 
 # XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP
@@ -51,7 +34,7 @@ state_change_cmd_map = {
     "left": lambda gp, angle: gp.left_joystick(x_value=int(-32768 * angle), y_value=0),
     "right": lambda gp, angle: gp.left_joystick(x_value=int(32767 * angle), y_value=0),
     "straight": lambda gp, angle: gp.left_joystick(x_value=0, y_value=32767),
-    "forwards": lambda gp, angle: gp.left_joystick(x_value=0, y_value=32767),
+    "forward": lambda gp, angle: gp.left_joystick(x_value=0, y_value=32767),
     "up": lambda gp, angle: gp.left_joystick(x_value=0, y_value=int(32767 * angle)),
     "down": lambda gp, angle: gp.left_joystick(x_value=0, y_value=int(-32768 * angle)),
     "neutral": lambda gp, angle: gp.left_joystick(x_value=0, y_value=0)
@@ -126,6 +109,11 @@ async def apply_command(gamepad, command, arg):
             state_change_cmd_map[command](gamepad, scalar)
             gamepad.update()
             await press_and_release_trigger(gamepad, "rt", 1)
+            print(f"argument: {arg} for command: {command}")
+            state_change_cmd_map["neutral"](gamepad, scalar)
+            gamepad.update() 
+            await asyncio.sleep(1)  # Small delay to ensure it's processed
+            gamepad.update() 
     except (ValueError, TypeError):
         print(f"Invalid argument: {arg} for command: {command}")
 
@@ -133,10 +121,35 @@ async def apply_command(gamepad, command, arg):
 class TwitchPlaysBot(BaseBot):
     def __init__(self):
         super().__init__(
-            overlay_ws_url=OVERLAY_WS,
+            overlay_ws_url="ws://localhost:6790",  # Use the standard WebSocket server
             prefix='!',
             channel_name="Feer"
         )
+        
+        # Initialize virtual gamepads with error handling
+        self.p1_gamepad = None
+        self.p2_gamepad = None
+        self._init_gamepads()
+    
+    def _init_gamepads(self):
+        """Initialize virtual gamepads with proper error handling."""
+        try:
+            self.p1_gamepad = vg.VX360Gamepad()
+            self.p2_gamepad = vg.VX360Gamepad()
+            logger.info("Virtual gamepads initialized successfully")
+        except AssertionError as e:
+            if "ViGEmBus" in str(e):
+                logger.error("ViGEmBus driver not found or not running. Please install ViGEmBus driver.")
+                logger.error("Download from: https://github.com/ViGEm/ViGEmBus/releases")
+                logger.error("Gamepad functionality will be disabled.")
+            else:
+                logger.error(f"Failed to initialize virtual gamepads: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing gamepads: {e}")
+    
+    def _is_gamepad_available(self):
+        """Check if gamepads are available for use."""
+        return self.p1_gamepad is not None and self.p2_gamepad is not None
 
     async def event_message(self, message):
         if message.echo:
@@ -149,17 +162,23 @@ class TwitchPlaysBot(BaseBot):
         cmd = parts[0]
         args = parts[1:]
 
+        # Check if gamepads are available before processing commands
+        if not self._is_gamepad_available():
+            if cmd in state_change_cmd_map or cmd in press_and_release_cmd_map:
+                logger.warning(f"Gamepad command '{cmd}' ignored - gamepads not available")
+            return
+
         if message.author.display_name == "Feer" and cmd == "start":
-            asyncio.create_task(press_and_release_button(p2_gamepad, vg.XUSB_BUTTON.XUSB_GAMEPAD_START))
+            asyncio.create_task(press_and_release_button(self.p2_gamepad, vg.XUSB_BUTTON.XUSB_GAMEPAD_START))
 
         if cmd in state_change_cmd_map or cmd in press_and_release_cmd_map:
             arg = args[0] if args else 100
             if is_on_team1(message.author.display_name):
-                asyncio.create_task(apply_command(p1_gamepad, cmd, arg))
+                asyncio.create_task(apply_command(self.p1_gamepad, cmd, arg))
                 asyncio.create_task(self.send_to_overlay(f'1{message.author.display_name}: {message.content.lower()}'))
                 logger.info(f'{message.content.lower()} **P1 Controller Interaction**')
             elif is_on_team2(message.author.display_name):
-                asyncio.create_task(apply_command(p2_gamepad, cmd, arg))
+                asyncio.create_task(apply_command(self.p2_gamepad, cmd, arg))
                 asyncio.create_task(self.send_to_overlay(f'2{message.author.display_name}: {message.content.lower()}'))
                 logger.info(f'{message.content.lower()} **P2 Controller Interaction**')
         else:

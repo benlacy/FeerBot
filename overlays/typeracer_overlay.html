@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TypeRacer Game Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .game-container {
+            background: transparent;
+            padding: 20px;
+            max-width: 90%;
+            text-align: left;
+        }
+
+        .word-count {
+            font-size: 28px;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            margin-bottom: 10px;
+        }
+
+        .sentence-text {
+            font-size: 36px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            line-height: 1.5;
+            display: flex;
+            align-items: center;
+            min-height: 50px;
+            flex-wrap: wrap;
+        }
+
+        .word {
+            transition: color 0.3s ease;
+            white-space: nowrap;
+            margin-right: 8px;
+        }
+
+        .word.typed {
+            color: #00ff00;
+        }
+
+        .word.current {
+            color: #000000;
+            background-color: #ffff00;
+            padding: 4px 8px;
+            border-radius: 4px;
+            animation: pulse 1s infinite;
+        }
+
+        .word.waiting {
+            color: #ffffff;
+        }
+
+        .word.hidden {
+            display: none;
+        }
+
+        @keyframes pulse {
+            0% { 
+                background-color: #ffff00;
+                box-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
+            }
+            50% { 
+                background-color: #ffdd00;
+                box-shadow: 0 0 15px rgba(255, 255, 0, 0.8);
+            }
+            100% { 
+                background-color: #ffff00;
+                box-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
+            }
+        }
+
+        .waiting-message {
+            font-size: 36px;
+            color: #888888;
+            font-style: italic;
+            margin: 40px 0;
+        }
+
+        .completion-message {
+            font-size: 36px;
+            color: #00ff00;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            margin: 20px 0;
+            animation: celebration 2s ease-in-out;
+        }
+
+        @keyframes celebration {
+            0% { transform: scale(1); }
+            25% { transform: scale(1.1); }
+            50% { transform: scale(1.05); }
+            75% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .floating-text {
+            position: absolute;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            white-space: nowrap;
+            pointer-events: none;
+            animation: float-up 2s ease-out forwards;
+            z-index: 1000;
+        }
+
+        .floating-text.word-typed {
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+        }
+
+        @keyframes float-up {
+            0% {
+                opacity: 0;
+                transform: translateY(0) scale(0.8);
+            }
+            10% {
+                opacity: 1;
+                transform: translateY(-10px) scale(1);
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-100px) scale(0.8);
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div id="waiting-message" class="waiting-message">
+            Waiting for game to start...
+        </div>
+        
+        <div id="game-content" class="hidden">
+            <div id="word-count" class="word-count">0/0</div>
+            <div class="sentence-text" id="sentence-text">
+                <!-- Words will be dynamically added here -->
+            </div>
+        </div>
+        
+        <div id="completion-message" class="completion-message hidden">
+            Game Complete! 🎉
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+        
+        let gameState = {
+            active: false,
+            sentence: '',
+            words: [],
+            typedWords: [],
+            currentWordIndex: 0,
+            participants: []
+        };
+
+        function createFloatingText(text, type) {
+            const floatingText = document.createElement('div');
+            floatingText.className = `floating-text ${type}`;
+            floatingText.textContent = text;
+            
+            // Position in center of screen
+            floatingText.style.top = '50%';
+            floatingText.style.left = '50%';
+            floatingText.style.transform = 'translate(-50%, -50%)';
+            
+            document.body.appendChild(floatingText);
+
+            // Remove after animation
+            floatingText.addEventListener('animationend', () => {
+                floatingText.remove();
+            });
+        }
+
+        function updateSentenceDisplay() {
+            const container = document.getElementById('sentence-text');
+            container.innerHTML = '';
+            
+            // Check if words exist and is not empty
+            if (!gameState.words || gameState.words.length === 0) {
+                updateWordCount(0, 0);
+                return;
+            }
+            
+            // Calculate the sliding window
+            const currentIndex = gameState.currentWordIndex;
+            const totalWords = gameState.words.length;
+            updateWordCount(currentIndex, totalWords);
+            
+            // Determine the start and end indices for the 5-word window
+            let startIndex, endIndex;
+            
+            if (totalWords <= 5) {
+                // If total words <= 5, show all words
+                startIndex = 0;
+                endIndex = totalWords;
+            } else if (currentIndex < 2) {
+                // Near the beginning, show first 5 words
+                startIndex = 0;
+                endIndex = 5;
+            } else if (currentIndex >= totalWords - 2) {
+                // Near the end, show last 5 words
+                startIndex = totalWords - 5;
+                endIndex = totalWords;
+            } else {
+                // In the middle, center the current word
+                startIndex = currentIndex - 2;
+                endIndex = currentIndex + 3;
+            }
+            
+            // Create the sliding window display
+            for (let i = startIndex; i < endIndex; i++) {
+                const wordElement = document.createElement('span');
+                wordElement.className = 'word';
+                wordElement.textContent = gameState.words[i];
+                
+                if (i < currentIndex) {
+                    wordElement.classList.add('typed');
+                } else if (i === currentIndex) {
+                    wordElement.classList.add('current');
+                } else {
+                    wordElement.classList.add('waiting');
+                }
+                
+                container.appendChild(wordElement);
+            }
+        }
+
+        function updateWordCount(currentIndex, totalWords) {
+            const el = document.getElementById('word-count');
+            el.textContent = `${currentIndex}/${totalWords}`;
+        }
+
+        function showGameContent() {
+            document.getElementById('waiting-message').classList.add('hidden');
+            document.getElementById('game-content').classList.remove('hidden');
+            document.getElementById('completion-message').classList.add('hidden');
+        }
+
+        function showWaitingMessage() {
+            document.getElementById('waiting-message').classList.remove('hidden');
+            document.getElementById('game-content').classList.add('hidden');
+            document.getElementById('completion-message').classList.add('hidden');
+        }
+
+        function showCompletionMessage() {
+            document.getElementById('waiting-message').classList.add('hidden');
+            document.getElementById('game-content').classList.add('hidden');
+            document.getElementById('completion-message').classList.remove('hidden');
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to TypeRacer WebSocket server');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleMessage(data);
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'typeracer_state':
+                    gameState = {
+                        active: data.game_active,
+                        sentence: data.sentence || '',
+                        words: data.words || [],
+                        typedWords: data.typed_words || [],
+                        currentWordIndex: data.current_word_index || 0,
+                        participants: []
+                    };
+                    
+                    if (gameState.active) {
+                        showGameContent();
+                        updateSentenceDisplay();
+                    } else {
+                        showWaitingMessage();
+                    }
+                    break;
+                    
+                case 'game_start':
+                    console.log('Game start received:', data);
+                    gameState.active = true;
+                    gameState.sentence = data.sentence;
+                    gameState.words = data.words;
+                    gameState.typedWords = [];
+                    gameState.currentWordIndex = 0;
+                    gameState.participants = [];
+                    
+                    console.log('Game state after start:', gameState);
+                    showGameContent();
+                    updateSentenceDisplay();
+                    break;
+                    
+                case 'word_typed':
+                    gameState.currentWordIndex = data.current_word_index;
+                    gameState.participants.push(data.user);
+                    
+                    updateSentenceDisplay();
+                    
+                    createFloatingText(`${data.user} typed "${data.word}"`, 'word-typed');
+                    break;
+
+                case 'word_backtrack':
+                    // Play failure sound
+                    try {
+                        const messageSound = new Audio('../assets/oof.mp3');
+                        messageSound.currentTime = 0;
+                        messageSound.volume = 1.0;
+                        messageSound.play();
+                    } catch (e) {
+                        console.error('Failed to play fail sound', e);
+                    }
+                    gameState.currentWordIndex = data.current_word_index;
+                    updateSentenceDisplay();
+                    break;
+                    
+                case 'game_complete':
+                    gameState.active = false;
+                    showCompletionMessage();
+                    createFloatingText('Game Complete!', 'word-typed');
+                    break;
+                    
+                case 'game_reset':
+                    gameState.active = false;
+                    gameState.sentence = '';
+                    gameState.words = [];
+                    gameState.typedWords = [];
+                    gameState.currentWordIndex = 0;
+                    gameState.participants = [];
+                    
+                    showWaitingMessage();
+                    break;
+            }
+        }
+
+        // Initial connection
+        connectWebSocket();
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>

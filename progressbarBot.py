@@ -16,8 +16,8 @@ MAX_SENTIMENT = 100
 MIN_SENTIMENT = 0
 
 # Sentiment keywords
-INCREASE_KEYWORDS = {"ICANT", "ICUMT", "lCUMT", "+2", "WECANT", "Utopia", "LOL"}
-DECREASE_KEYWORDS = {"ICAN", "WECAN", "-2"}
+INCREASE_KEYWORDS = {"ICANT", "ICUMT", "lCUMT", "+2", "WECANT", "Utopia", "LOL", "WW", "WWW", "W"}
+DECREASE_KEYWORDS = {"ICAN", "WECAN", "-2", "LL", "L"}
 
 class SentimentTracker:
     def __init__(self, initial_value: int = INITIAL_SENTIMENT):

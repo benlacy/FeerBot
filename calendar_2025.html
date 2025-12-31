@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 Calendar</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        
+        .calendar-container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .month {
+            background: #2d2d2d;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            border: 1px solid #404040;
+        }
+        
+        .month-title {
+            text-align: center;
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: #ffffff;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        
+        .day-header {
+            text-align: center;
+            font-weight: bold;
+            padding: 20px 10px;
+            background-color: #404040;
+            font-size: 18px;
+            color: #ffffff;
+            border-radius: 8px;
+        }
+        
+        .day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px solid #404040;
+            background-color: #2d2d2d;
+            transition: all 0.3s ease;
+            font-size: 20px;
+            font-weight: 500;
+            border-radius: 8px;
+            min-height: 60px;
+        }
+        
+        .day:hover {
+            background-color: #404040;
+            border-color: #555555;
+            transform: scale(1.05);
+        }
+        
+        .day.other-month {
+            color: #666666;
+            background-color: #1a1a1a;
+            border-color: #333333;
+        }
+        
+        .day.other-month:hover {
+            background-color: #2a2a2a;
+        }
+        
+        .day.green {
+            background-color: #4CAF50;
+            color: white;
+            border-color: #45a049;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .day.red {
+            background-color: #f44336;
+            color: white;
+            border-color: #d32f2f;
+            box-shadow: 0 0 15px rgba(244, 67, 54, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #ffffff;
+            margin-bottom: 40px;
+            font-size: 48px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <h1>2025 Calendar</h1>
+    <div class="calendar-container" id="calendarContainer"></div>
+
+    <script>
+        const months = [
+            'October', 'November', 'December', 'January', 'February', 'March',
+            'April', 'May', 'June', 'July', 'August', 'September'
+        ];
+        
+        const monthDays = [31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30];
+        const monthStartDays = [3, 6, 1, 3, 6, 1, 4, 6, 2, 4, 0, 3]; // 2025 start days
+        
+        function createCalendar(monthIndex, year) {
+            const monthDiv = document.createElement('div');
+            monthDiv.className = 'month';
+            
+            const title = document.createElement('div');
+            title.className = 'month-title';
+            title.textContent = months[monthIndex] + ' ' + year;
+            monthDiv.appendChild(title);
+            
+            const grid = document.createElement('div');
+            grid.className = 'calendar-grid';
+            
+            // Day headers
+            const dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            dayHeaders.forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'day-header';
+                header.textContent = day;
+                grid.appendChild(header);
+            });
+            
+            // Calculate start day and days in month
+            const startDay = monthStartDays[monthIndex];
+            const daysInMonth = monthIndex === 1 && year === 2025 ? 28 : monthDays[monthIndex];
+            
+            // Previous month days
+            const prevMonthDays = monthIndex === 0 ? 30 : monthDays[monthIndex - 1];
+            for (let i = startDay - 1; i >= 0; i--) {
+                const day = document.createElement('div');
+                day.className = 'day other-month';
+                day.textContent = prevMonthDays - i;
+                grid.appendChild(day);
+            }
+            
+            // Current month days
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayElement = document.createElement('div');
+                dayElement.className = 'day';
+                dayElement.textContent = day;
+                dayElement.addEventListener('click', function() {
+                    cycleDayState(this);
+                });
+                grid.appendChild(dayElement);
+            }
+            
+            // Next month days to fill grid
+            const remainingCells = 42 - (startDay + daysInMonth);
+            for (let day = 1; day <= remainingCells; day++) {
+                const dayElement = document.createElement('div');
+                dayElement.className = 'day other-month';
+                dayElement.textContent = day;
+                grid.appendChild(dayElement);
+            }
+            
+            monthDiv.appendChild(grid);
+            return monthDiv;
+        }
+        
+        function cycleDayState(dayElement) {
+            if (dayElement.classList.contains('other-month')) return;
+            
+            if (dayElement.classList.contains('green')) {
+                dayElement.classList.remove('green');
+                dayElement.classList.add('red');
+            } else if (dayElement.classList.contains('red')) {
+                dayElement.classList.remove('red');
+            } else {
+                dayElement.classList.add('green');
+            }
+        }
+        
+        // Create calendars for all months
+        const container = document.getElementById('calendarContainer');
+        
+        // October 2025 to September 2026
+        for (let i = 0; i < 12; i++) {
+            const year = i < 3 ? 2025 : 2026;
+            const monthIndex = i;
+            container.appendChild(createCalendar(monthIndex, year));
+        }
+    </script>
+</body>
+</html>

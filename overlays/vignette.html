@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vignette Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 0%, transparent 0%, rgba(0, 0, 0, 1) 100%);
+            pointer-events: none;
+            z-index: 1000;
+            transition: background 0.5s ease;
+        }
+
+        .bouncing {
+            /* Animation will be handled by JavaScript for smooth movement */
+        }
+
+        #info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1001;
+            display: none; /* Hide by default, show with ?debug */
+        }
+
+        #viewer-display {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: bold;
+            z-index: 1001;
+            font-family: 'Courier New', monospace;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            min-width: 200px;
+            text-align: center;
+        }
+
+        #viewer-label {
+            font-size: 16px;
+            color: #cccccc;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        #viewer-text {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .flash-green {
+            animation: flashGreen 0.5s ease-in-out;
+        }
+
+        .flash-red {
+            animation: flashRed 0.5s ease-in-out;
+        }
+
+        @keyframes flashGreen {
+            0% { background: rgba(0, 0, 0, 0.8); }
+            50% { background: rgba(0, 255, 0, 0.8); }
+            100% { background: rgba(0, 0, 0, 0.8); }
+        }
+
+        @keyframes flashRed {
+            0% { background: rgba(0, 0, 0, 0.8); }
+            50% { background: rgba(255, 0, 0, 0.8); }
+            100% { background: rgba(0, 0, 0, 0.8); }
+        }
+    </style>
+</head>
+<body>
+    <div id="vignette"></div>
+    <div id="info">
+        <div>Viewers: <span id="viewer-count">0</span></div>
+        <div>Max Viewers: <span id="max-viewers">1000</span></div>
+        <div>Vignette: <span id="vignette-percentage">0</span>%</div>
+    </div>
+    <div id="viewer-display">
+        <span id="viewer-label">Viewers:</span>
+        <span id="viewer-text">0/1000 0%</span>
+    </div>
+
+    <script>
+        const vignette = document.getElementById('vignette');
+        const info = document.getElementById('info');
+        const viewerCount = document.getElementById('viewer-count');
+        const maxViewers = document.getElementById('max-viewers');
+        const vignettePercentage = document.getElementById('vignette-percentage');
+        const viewerText = document.getElementById('viewer-text');
+
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+
+        // Check for debug mode
+        const urlParams = new URLSearchParams(window.location.search);
+        const debugMode = urlParams.get('debug') === 'true';
+        if (debugMode) {
+            info.style.display = 'block';
+        }
+
+        let currentPercentage = 0;
+        let bounceAnimation = null;
+        let bouncePosition = { x: 50, y: 50 };
+        let bounceVelocity = { x: 2, y: 1.5 };
+        let lastViewerCount = 0;
+
+        function updateVignette(percentage, bounceActive = false) {
+            currentPercentage = percentage;
+            
+            // Convert percentage to circle size (0% = full visibility, 100% = no visibility)
+            // At 0%: large circle (100% of screen)
+            // At 100%: no circle (0% of screen)
+            const circleSize = Math.max(0, 100 - percentage);
+            
+            // Set the circle size as a CSS custom property
+            vignette.style.setProperty('--circle-size', `${circleSize}%`);
+            
+            // Handle bounce animation
+            if (bounceActive) {
+                startBounceAnimation();
+                console.log('Bounce animation started');
+            } else {
+                stopBounceAnimation();
+                // When not bouncing, set the gradient to center
+                const gradient = `radial-gradient(circle at center, transparent 0%, transparent ${circleSize}%, rgba(0, 0, 0, 1) ${circleSize}%, rgba(0, 0, 0, 1) 100%)`;
+                vignette.style.background = gradient;
+                console.log('Bounce animation stopped');
+            }
+            
+            // Update info display
+            vignettePercentage.textContent = percentage.toFixed(1);
+        }
+
+        function startBounceAnimation() {
+            if (bounceAnimation) return; // Already running
+            
+            vignette.classList.add('bouncing');
+            
+            function animate() {
+                // Update position
+                bouncePosition.x += bounceVelocity.x;
+                bouncePosition.y += bounceVelocity.y;
+                
+                // Bounce off edges (keep within 5% to 95% of screen)
+                if (bouncePosition.x <= 5 || bouncePosition.x >= 95) {
+                    bounceVelocity.x = -bounceVelocity.x;
+                    bouncePosition.x = Math.max(5, Math.min(95, bouncePosition.x));
+                }
+                if (bouncePosition.y <= 5 || bouncePosition.y >= 95) {
+                    bounceVelocity.y = -bounceVelocity.y;
+                    bouncePosition.y = Math.max(5, Math.min(95, bouncePosition.y));
+                }
+                
+                // Update the gradient position
+                const circleSize = Math.max(0, 100 - currentPercentage);
+                const gradient = `radial-gradient(circle at ${bouncePosition.x}% ${bouncePosition.y}%, transparent 0%, transparent ${circleSize}%, rgba(0, 0, 0, 1) ${circleSize}%, rgba(0, 0, 0, 1) 100%)`;
+                vignette.style.background = gradient;
+                
+                // Continue animation
+                bounceAnimation = requestAnimationFrame(animate);
+            }
+            
+            animate();
+        }
+
+        function stopBounceAnimation() {
+            if (bounceAnimation) {
+                cancelAnimationFrame(bounceAnimation);
+                bounceAnimation = null;
+            }
+            vignette.classList.remove('bouncing');
+        }
+
+        function updateViewerDisplay(current, max, percentage) {
+            // Format: "123/300 40%"
+            const text = `${current}/${max} ${percentage.toFixed(0)}%`;
+            viewerText.textContent = text;
+            
+            // Check for viewer count changes and flash accordingly
+            if (lastViewerCount > 0) { // Only flash if we have a previous count
+                const viewerDisplay = document.getElementById('viewer-display');
+                
+                if (current > lastViewerCount) {
+                    // Viewers increased - flash green
+                    viewerDisplay.classList.remove('flash-red');
+                    viewerDisplay.classList.add('flash-green');
+                    console.log(`Viewers increased: ${lastViewerCount} → ${current}`);
+                } else if (current < lastViewerCount) {
+                    // Viewers decreased - flash red
+                    viewerDisplay.classList.remove('flash-green');
+                    viewerDisplay.classList.add('flash-red');
+                    console.log(`Viewers decreased: ${lastViewerCount} → ${current}`);
+                }
+                
+                // Remove flash classes after animation completes
+                setTimeout(() => {
+                    viewerDisplay.classList.remove('flash-green', 'flash-red');
+                }, 500);
+            }
+            
+            // Update last viewer count
+            lastViewerCount = current;
+        }
+
+        function updateInfo(data) {
+            const current = data.viewer_count || 0;
+            const max = data.max_viewers || 1000;
+            const percentage = data.percentage || 0;
+            
+            viewerCount.textContent = current;
+            maxViewers.textContent = max;
+            vignettePercentage.textContent = percentage.toFixed(1);
+            
+            // Update the main viewer display
+            updateViewerDisplay(current, max, percentage);
+        }
+
+        function connectWebSocket() {
+            // Clear any existing reconnect timeout
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            // Close existing connection if any
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to WebSocket server');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'vignette') {
+                            updateVignette(data.percentage, data.bounce_active || false);
+                            updateInfo(data);
+                            console.log(`Vignette updated: ${data.percentage.toFixed(1)}% (${data.viewer_count} viewers) - Bounce: ${data.bounce_active || false}`);
+                        } else if (data.type === 'bounce') {
+                            // Handle bounce-only updates
+                            if (data.active) {
+                                vignette.classList.add('bouncing');
+                                console.log('Bounce animation started');
+                            } else {
+                                vignette.classList.remove('bouncing');
+                                console.log('Bounce animation stopped');
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    
+                    // Only set reconnect timeout if we don't already have one
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 2000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to connect to WebSocket:', error);
+                
+                if (!reconnectTimeout) {
+                    reconnectTimeout = setTimeout(connectWebSocket, 2000);
+                }
+            }
+        }
+
+        // Initialize
+        connectWebSocket();
+
+        // Handle window close
+        window.addEventListener('beforeunload', () => {
+            if (ws) {
+                ws.close();
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F1') {
+                e.preventDefault();
+                info.style.display = info.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    </script>
+</body>
+</html>

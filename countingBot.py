@@ -72,7 +72,7 @@ class CountingBot(BaseBot):
             int: Timeout duration in seconds
         """
         timeout = 7.5 * (2 ** streak) + 1
-        return min(timeout, 86400)  # 24-hour cap
+        return min(timeout, 1800) #86400)  # 24-hour cap
 
     async def event_message(self, message):
         """

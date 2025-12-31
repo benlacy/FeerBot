@@ -24,7 +24,7 @@ async def handler(websocket: Any) -> None:
     
     try:
         async for message in websocket:
-            logger.info(f"Received message from client {client_id}: {message}")
+            # logger.info(f"Received message from client {client_id}: {message}")
             await broadcast(message, sender_id=client_id)
     except websockets.exceptions.ConnectionClosedError as e:
         logger.error(f"Client {client_id} disconnected unexpectedly: {str(e)}")
@@ -73,7 +73,7 @@ async def main() -> None:
             ping_interval=20,  # Keep connections alive
             ping_timeout=20,
             close_timeout=10,
-            max_size=2**20,  # 1MB max message size
+            max_size=10 * 2**20,  # 10MB max message size (for base64 audio data)
             max_queue=32,    # Max number of messages in queue
             compression=None  # Disable compression for simplicity
         ) as server:

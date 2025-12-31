@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timer Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            border-radius: 20px;
+        }
+
+        /* Background with cat theme */
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #f5e6d3 0%, #e8d5c4 50%, #f5e6d3 100%);
+            overflow: hidden;
+            border-radius: 20px;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            padding: 20px;
+        }
+
+        /* Timer Display */
+        .timer-display {
+            font-size: 120px;
+            font-weight: bold;
+            color: #3b82f6;
+            text-shadow: 
+                0 0 20px rgba(59, 130, 246, 0.8),
+                0 0 40px rgba(59, 130, 246, 0.6),
+                0 4px 8px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 4px;
+            transition: all 0.3s ease;
+            text-align: center;
+            width: 100%;
+        }
+
+        /* Sub counter */
+        .sub-counter {
+            font-size: 36px;
+            font-weight: bold;
+            color: #888888;
+            margin-bottom: 20px;
+            text-align: center;
+            width: 100%;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            width: 90%;
+            height: 180px;
+            position: relative;
+            margin-top: 20px;
+        }
+
+        .chart-line {
+            stroke: #ff6b6b;
+            stroke-width: 12;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.6));
+            transition: all 0.5s ease;
+        }
+
+        .chart-hook {
+            stroke: #ff6b6b;
+            stroke-width: 12;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.6));
+        }
+
+        /* Cat in bag image positioned at end of graph */
+        .cat-image {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            z-index: 20;
+            pointer-events: none;
+            transition: all 0.5s ease;
+            transform: translate(-50%, -50%);
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+            animation: catBounce 2s ease-in-out infinite;
+            display: none;
+        }
+
+        @keyframes catBounce {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        .cat-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Waiting message */
+        .waiting {
+            font-size: 36px;
+            color: #888888;
+            font-style: italic;
+            text-align: center;
+        }
+
+        /* Hidden state */
+        .hidden {
+            display: none;
+        }
+
+        /* Low timer warning */
+        .timer-low {
+            color: #ef4444;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div class="background"></div>
+    
+    <div class="container">
+        <div id="waiting" class="waiting">Waiting for timer data...</div>
+        
+        <div id="content" class="hidden">
+            <div class="timer-display" id="timer-display">00:00:00</div>
+            <div class="sub-counter" id="sub-counter">0 Subs</div>
+            
+            <div class="chart-container">
+                <svg id="chart-svg" width="100%" height="100%" viewBox="0 0 800 200" preserveAspectRatio="none">
+                    <!-- Chart will be drawn here -->
+                </svg>
+                <div class="cat-image" id="cat-image">
+                    <img src="../assets/dsc_1439-4x.png" alt="Cat in bag">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+        
+        let currentData = {
+            timer_seconds: 0,
+            total_subs: 0,
+            timer_history: []
+        };
+
+        function formatTime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        function drawChart(timerHistory) {
+            const svg = document.getElementById('chart-svg');
+            svg.innerHTML = ''; // Clear previous chart
+            
+            if (timerHistory.length === 0) {
+                return;
+            }
+
+            const width = 800;
+            const height = 200;
+            const padding = 40;
+            const chartWidth = width - 2 * padding;
+            const chartHeight = height - 2 * padding;
+
+            // Find min and max timer values for scaling
+            const timerValues = timerHistory.map(entry => entry.timer_seconds);
+            const minTimer = Math.min(...timerValues);
+            const maxTimer = Math.max(...timerValues);
+            const timerRange = maxTimer - minTimer || 1; // Avoid division by zero
+
+            // Calculate points
+            const points = timerHistory.map((entry, index) => {
+                const x = padding + (index / (timerHistory.length - 1 || 1)) * chartWidth;
+                // Invert Y so higher timer values are higher on the chart
+                const y = padding + height - 2 * padding - ((entry.timer_seconds - minTimer) / timerRange) * chartHeight;
+                return { x, y, timer: entry.timer_seconds };
+            });
+
+            // Position cat at the most recent data point
+            if (points.length > 0) {
+                const lastPoint = points[points.length - 1];
+                const catImage = document.getElementById('cat-image');
+                
+                // Calculate position relative to the chart container (SVG uses viewBox)
+                // The SVG viewBox is 0 0 800 200, so we need to convert to percentage
+                const xPercent = (lastPoint.x / width) * 100;
+                const yPercent = (lastPoint.y / height) * 100;
+                
+                catImage.style.left = xPercent + '%';
+                catImage.style.top = yPercent + '%';
+                catImage.style.display = 'block';
+            } else {
+                const catImage = document.getElementById('cat-image');
+                catImage.style.display = 'none';
+            }
+
+            // Draw the line
+            if (points.length > 1) {
+                let pathData = '';
+                
+                // Start with a hook (upward segment) if we have at least 2 points
+                if (points.length >= 2) {
+                    const firstPoint = points[0];
+                    const secondPoint = points[1];
+                    
+                    // Create a hook: start lower, then go up to first point
+                    const hookStartY = height - padding;
+                    pathData = `M ${firstPoint.x - (secondPoint.x - firstPoint.x)} ${hookStartY} `;
+                    pathData += `L ${firstPoint.x} ${hookStartY} `;
+                    pathData += `L ${firstPoint.x} ${firstPoint.y} `;
+                } else {
+                    pathData = `M ${points[0].x} ${points[0].y} `;
+                }
+                
+                // Draw the main line
+                for (let i = 0; i < points.length; i++) {
+                    if (i === 0) {
+                        pathData += `L ${points[i].x} ${points[i].y} `;
+                    } else {
+                        // Smooth curve using quadratic bezier
+                        const prevPoint = points[i - 1];
+                        const currentPoint = points[i];
+                        const controlX = (prevPoint.x + currentPoint.x) / 2;
+                        const controlY = (prevPoint.y + currentPoint.y) / 2;
+                        pathData += `Q ${prevPoint.x} ${prevPoint.y} ${controlX} ${controlY} `;
+                        pathData += `L ${currentPoint.x} ${currentPoint.y} `;
+                    }
+                }
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathData);
+                path.setAttribute('class', 'chart-line');
+                svg.appendChild(path);
+            } else if (points.length === 1) {
+                // Single point - just draw a dot
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', points[0].x);
+                circle.setAttribute('cy', points[0].y);
+                circle.setAttribute('r', '8');
+                circle.setAttribute('fill', '#ff6b6b');
+                circle.setAttribute('filter', 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.6))');
+                svg.appendChild(circle);
+            }
+        }
+
+        function updateDisplay(data) {
+            if (data.timer_seconds !== undefined) {
+                currentData.timer_seconds = data.timer_seconds;
+            }
+            if (data.total_subs !== undefined) {
+                currentData.total_subs = data.total_subs;
+            }
+            if (data.timer_history) {
+                currentData.timer_history = data.timer_history;
+            }
+
+            // Update timer display
+            const timerDisplay = document.getElementById('timer-display');
+            const formattedTime = formatTime(currentData.timer_seconds);
+            timerDisplay.textContent = formattedTime;
+            
+            // Add warning class if timer is low (less than 5 minutes)
+            if (currentData.timer_seconds < 300) {
+                timerDisplay.classList.add('timer-low');
+            } else {
+                timerDisplay.classList.remove('timer-low');
+            }
+
+            // Update sub counter
+            const subCounter = document.getElementById('sub-counter');
+            subCounter.textContent = `${currentData.total_subs} Sub${currentData.total_subs !== 1 ? 's' : ''}`;
+
+            // Update chart
+            drawChart(currentData.timer_history);
+
+            // Show content
+            document.getElementById('waiting').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to Timer WebSocket server');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'timer_update') {
+                            updateDisplay(data);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        // Initialize
+        connectWebSocket();
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>
+
+

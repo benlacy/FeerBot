@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 from pathlib import Path
 from credential_manager import CredentialManager
 import aiohttp
+import json
+from datetime import datetime, timezone
+import tempfile
+import playsound
+import requests
+from gtts import gTTS
 
 # Configure logging
 logging.basicConfig(
@@ -66,6 +72,11 @@ class BaseBot(commands.Bot):
         self.overlay_ws_url = overlay_ws_url
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.token_refresh_task = None
+        
+        # TTS configuration
+        self.tts_api_url = "https://api.console.tts.monster/generate"
+        self.tts_api_token = os.getenv("TTS_MONSTER_API_TOKEN")
+        self.default_voice_id = "67dbd94d-a097-4676-af2f-1db67c1eb8dd"  # Default voice ID
 
     async def _token_refresh_loop(self):
         """Background task to periodically check and refresh token."""
@@ -74,10 +85,13 @@ class BaseBot(commands.Bot):
                 # Get a valid token (will refresh if needed)
                 token = self.cred_manager.get_valid_token()
                 if token and token != self.token:
+                    logger.info("Token refreshed, reconnecting bot...")
                     self.token = token
+
                     # Reconnect the bot with new token
-                    await self.close()
-                    await self.start()
+                    # await self.close()
+                    await self.connect()
+                    
                 await asyncio.sleep(60)  # Check every minute
             except Exception as e:
                 logger.error(f"Error in token refresh loop: {e}")
@@ -91,6 +105,142 @@ class BaseBot(commands.Bot):
         # Only connect to WebSocket if overlay URL is provided
         if self.overlay_ws_url is not None:
             self.websocket_task = asyncio.create_task(self.connect_websocket())
+
+        #Test code to check banned users
+        # await self.get_banned_users()
+        # uid = await self.get_user_id("eros__rl")
+        # await self.untimeout_user(uid, "eros__rl")
+
+    async def get_broadcaster_id(self):
+        if self.broadcaster_id is None:
+            self.broadcaster_id = await self.get_user_id(self.channel_name)
+            if not self.broadcaster_id:
+                logger.error(f"Could not get broadcaster ID for {self.channel_name}")
+                return
+        return self.broadcaster_id
+
+    async def get_banned_users(self):
+        """
+        Get a list of banned users from the channel.
+        
+        Args:
+            None
+            
+        Returns:
+            list: A list of banned users
+        """
+
+        # Get broadcaster ID from the channel name
+        self.broadcaster_id = await self.get_broadcaster_id()
+
+        try:
+            url = f"https://api.twitch.tv/helix/moderation/banned?broadcaster_id={self.broadcaster_id}&first=100"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        payload = await response.json()
+                        items = payload.get('data', [])
+                        return items
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Failed to fetch banned list. Status: {response.status}, Error: {error_text}")
+                        return []
+        except Exception as e:
+            logger.error(f"error getting banned users: {str(e)}")
+            return []
+
+    def _parse_iso8601_utc(self, value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            # Values look like '2025-09-12T00:18:17Z'
+            return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except Exception:
+            try:
+                # Fallback: allow fromisoformat with Z -> +00:00
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+    @commands.command(name='timeouts')
+    async def timeouts_command(self, ctx: commands.Context):
+        """Log users currently timed out, soonest to expire first. (Mods/Broadcaster only)"""
+        is_broadcaster = getattr(ctx.author, "is_broadcaster", False)
+        is_mod = getattr(ctx.author, "is_mod", False)
+        if not (is_broadcaster or is_mod):
+            return
+
+        # Ensure broadcaster id is available
+        self.broadcaster_id = await self.get_broadcaster_id()
+        items = await self.get_banned_users()
+
+        # Filter to timeouts (non-empty expires_at) and sort by soonest expiration
+        timeouts = [it for it in items if it.get('expires_at')]
+        if not timeouts:
+            logger.info("No active timeouts.")
+            return
+
+        def sort_key(it):
+            dt = self._parse_iso8601_utc(it.get('expires_at', ''))
+            # None goes to far future
+            return dt or datetime.max.replace(tzinfo=timezone.utc)
+
+        timeouts.sort(key=sort_key)
+
+        # Log line-by-line
+        for it in timeouts:
+            user = it.get('user_login') or it.get('user_name') or it.get('user_id')
+            expires = self._parse_iso8601_utc(it.get('expires_at'))
+            mod = it.get('moderator_login') or it.get('moderator_name')
+            if not expires:
+                logger.info(f"timeout: {user} remaining unknown (by {mod})")
+                continue
+            now_utc = datetime.now(timezone.utc)
+            remaining = expires - now_utc
+            if remaining.total_seconds() < 0:
+                remaining = remaining.__class__(0)
+            days = remaining.days
+            hours = (remaining.seconds // 3600)
+            minutes = (remaining.seconds % 3600) // 60
+            logger.info(f"timeout: {user} {days}d {hours}h {minutes}m remaining (by {mod})")
+
+        # Send structured payload to overlay (no chat output)
+        payload_items = []
+        for it in timeouts:
+            user = it.get('user_login') or it.get('user_name') or it.get('user_id')
+            expires = self._parse_iso8601_utc(it.get('expires_at'))
+            if not expires:
+                remaining_str = "unknown"
+            else:
+                now_utc = datetime.now(timezone.utc)
+                remaining = expires - now_utc
+                if remaining.total_seconds() < 0:
+                    remaining = remaining.__class__(0)
+                days = remaining.days
+                hours = (remaining.seconds // 3600)
+                minutes = (remaining.seconds % 3600) // 60
+                remaining_str = f"{days}d {hours}h {minutes}m"
+            payload_items.append({
+                "user": user,
+                "remaining": remaining_str,
+            })
+
+        try:
+            await self.send_to_overlay(json.dumps({
+                "type": "timeouts",
+                "items": payload_items
+            }))
+        except Exception as e:
+            logger.error(f"Failed sending timeouts to overlay: {str(e)}")
+
+        # await self.ws.close()
+        # await self.close()
+        # await self.start()
+        # await self.connect()
 
     async def connect_websocket(self):
         """Maintains a persistent WebSocket connection with exponential backoff."""
@@ -173,12 +323,7 @@ class BaseBot(commands.Bot):
             reason: Reason for the timeout
         """
         try:
-            # Get broadcaster ID from the channel name
-            if self.broadcaster_id is None:
-                self.broadcaster_id = await self.get_user_id(self.channel_name)
-                if not self.broadcaster_id:
-                    logger.error(f"Could not get broadcaster ID for {self.channel_name}")
-                    return
+            self.broadcaster_id = await self.get_broadcaster_id()
 
             # Get bot's user ID for the moderator ID
             if self.moderator_id is None:
@@ -207,6 +352,45 @@ class BaseBot(commands.Bot):
 
         except Exception as e:
             logger.error(f"Error timing out user {username}: {str(e)}")
+
+    async def untimeout_user(self, user_id: str, username: str) -> None:
+        """
+        Remove an active timeout/ban for a user in the channel.
+
+        Args:
+            user_id: The Twitch user ID to untimeout/unban
+            username: The username of the user (for logging)
+        """
+        try:
+            self.broadcaster_id = await self.get_broadcaster_id()
+
+            if self.moderator_id is None:
+                self.moderator_id = await self.get_user_id(self.nick)
+                if not self.moderator_id:
+                    logger.error(f"Could not get moderator ID for {self.nick}")
+                    return
+
+            # DELETE removes the ban/timeout
+            url = (
+                "https://api.twitch.tv/helix/moderation/bans"
+                f"?broadcaster_id={self.broadcaster_id}&moderator_id={self.moderator_id}&user_id={user_id}"
+            )
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id,
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(url, headers=headers) as response:
+                    if response.status in (200, 204):
+                        logger.info(f"Successfully removed timeout/ban for {username}")
+                    else:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to remove timeout/ban for {username}. Status: {response.status}, Error: {error_text}"
+                        )
+        except Exception as e:
+            logger.error(f"Error removing timeout/ban for {username}: {str(e)}")
 
     async def get_user_id(self, username: str) -> str:
         """
@@ -245,6 +429,85 @@ class BaseBot(commands.Bot):
     async def upon_connection(self):
         # Child classes should implement
         pass 
+
+    async def speak(self, message: str, voice_id: Optional[str] = None):
+        """
+        Generate TTS using gTTS and play the audio.
+        
+        Args:
+            message: The text to convert to speech
+            voice_id: Optional voice ID (not used for gTTS, kept for compatibility)
+        """
+        try:
+            tts = gTTS(message, lang='en', tld='us')
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+                temp_path = fp.name
+                tts.save(temp_path)
+            try:
+                playsound.playsound(temp_path)
+            finally:
+                os.unlink(temp_path)
+        except Exception as e:
+            logger.error(f"Error in speak: {e}")
+
+    async def speakMonster(self, message: str, voice_id: Optional[str] = None):
+        """
+        Generate TTS using TTSMonster API and play the audio.
+        
+        Args:
+            message: The text to convert to speech
+            voice_id: Optional voice ID, uses default if not provided
+        """
+        try:
+            # Use provided voice_id or default
+            selected_voice_id = voice_id or self.default_voice_id
+            
+            # Prepare the request payload
+            payload = {
+                "voice_id": selected_voice_id,
+                "message": message[:500]  # Limit to 500 characters as per API docs
+            }
+            
+            # Set up headers
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": self.tts_api_token
+            }
+            
+            # Make the API request
+            response = requests.post(
+                self.tts_api_url,
+                headers=headers,
+                data=json.dumps(payload)
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("status") == 200:
+                    audio_url = result.get("url")
+                    
+                    # Download the audio file
+                    audio_response = requests.get(audio_url)
+                    if audio_response.status_code == 200:
+                        # Save to temporary file
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+                            temp_path = fp.name
+                            fp.write(audio_response.content)
+                        
+                        # Play the audio
+                        try:
+                            playsound.playsound(temp_path)
+                        finally:
+                            os.unlink(temp_path)
+                    else:
+                        logger.error(f"Failed to download audio: {audio_response.status_code}")
+                else:
+                    logger.error(f"TTS API error: {result}")
+            else:
+                logger.error(f"TTS API request failed: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Error in speakMonster: {e}")
 
     async def event_message(self, message):
         """

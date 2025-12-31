@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>King Declaration Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        .declare-container {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 40px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .declare-box {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            max-width: 95%;
+            justify-content: flex-start;
+        }
+
+        .crown-image {
+            width: 60px;
+            height: 60px;
+            margin-right: 20px;
+            object-fit: contain;
+            animation: gentleShake 0.5s ease-in-out infinite;
+        }
+
+        @keyframes gentleShake {
+            0%, 100% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+            25% {
+                transform: translate(-1px, 1px) rotate(-0.5deg);
+            }
+            50% {
+                transform: translate(1px, -1px) rotate(0.5deg);
+            }
+            75% {
+                transform: translate(1px, 1px) rotate(-0.5deg);
+            }
+        }
+
+        .declare-content {
+            display: flex;
+            align-items: center;
+            color: #ffffff;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 
+                0 0 4px rgba(0, 0, 0, 0.8),
+                0 0 8px rgba(0, 0, 0, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9),
+                -2px -2px 4px rgba(0, 0, 0, 0.9),
+                2px -2px 4px rgba(0, 0, 0, 0.9),
+                -2px 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        .colon {
+            margin-right: 20px;
+            color: #ffd700;
+            font-size: 32px;
+            text-shadow: 
+                0 0 4px rgba(0, 0, 0, 0.8),
+                0 0 8px rgba(0, 0, 0, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9),
+                -2px -2px 4px rgba(0, 0, 0, 0.9),
+                2px -2px 4px rgba(0, 0, 0, 0.9),
+                -2px 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        .message {
+            color: #ffffff;
+            word-wrap: break-word;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="declare-container hidden" id="declare-container">
+        <div class="declare-box">
+            <img src="../assets/dsc_king-4x.png" alt="Crown" class="crown-image" id="crown-image">
+            <div class="declare-content">
+                <span class="colon">:</span>
+                <span class="message" id="declare-message"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const declareContainer = document.getElementById('declare-container');
+        const declareMessage = document.getElementById('declare-message');
+        const ws = new WebSocket('ws://localhost:6790');
+        
+        // Initialize audio context early (required for OBS browser sources)
+        let audioContext = null;
+        
+        async function initializeAudioContext() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Resume audio context if suspended (required by OBS browser sources)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                    console.log('Audio context resumed');
+                }
+            } catch (e) {
+                console.error('Error initializing audio context:', e);
+            }
+        }
+        
+        // Initialize audio context on page load (critical for OBS)
+        initializeAudioContext();
+        
+        ws.onopen = () => {
+            console.log('Connected to declare overlay WebSocket');
+            // Ensure audio context is ready when WebSocket connects
+            initializeAudioContext();
+        };
+        
+        async function playAudioFromDataUrl(audioDataUrl) {
+            try {
+                console.log('Playing audio from data URL (length:', audioDataUrl.length, 'chars)');
+                
+                // Ensure audio context is ready (critical for OBS)
+                await initializeAudioContext();
+                
+                try {
+                    // Use Web Audio API approach (like bomb_overlay) for OBS compatibility
+                    // Convert data URL to ArrayBuffer
+                    const base64Data = audioDataUrl.split(',')[1];
+                    const binaryString = atob(base64Data);
+                    const arrayBuffer = new ArrayBuffer(binaryString.length);
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        uint8Array[i] = binaryString.charCodeAt(i);
+                    }
+                    
+                    // Decode audio data
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    
+                    // Create buffer source
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    // Connect to destination (speakers)
+                    source.connect(audioContext.destination);
+                    
+                    // Track when audio finishes
+                    let endedCallback = null;
+                    const audioDuration = audioBuffer.duration * 1000; // Convert to milliseconds
+                    
+                    source.addEventListener('ended', () => {
+                        console.log('Audio playback finished via Web Audio API');
+                        if (endedCallback) {
+                            endedCallback();
+                        }
+                    });
+                    
+                    source.start(0);
+                    console.log('Audio playback started via Web Audio API, duration:', audioDuration, 'ms');
+                    
+                    // Return a mock audio object with ended event for compatibility
+                    const mockAudio = {
+                        addEventListener: (event, callback) => {
+                            if (event === 'ended') {
+                                endedCallback = callback;
+                            }
+                        },
+                        duration: audioDuration
+                    };
+                    
+                    return mockAudio;
+                } catch (webAudioError) {
+                    console.error('Web Audio API failed, trying fallback:', webAudioError);
+                    
+                    // Fallback to Audio() element with data URL
+                    const audio = new Audio(audioDataUrl);
+                    audio.volume = 1.0;
+                    
+                    // Add error handlers
+                    audio.addEventListener('error', (e) => {
+                        console.error('Audio playback error:', e, audio.error);
+                    });
+                    
+                    // Try to play the audio
+                    try {
+                        // Ensure audio context is resumed before playing
+                        if (audioContext && audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                            console.log('Audio context resumed before playback');
+                        }
+                        
+                        const playPromise = audio.play();
+                        if (playPromise !== undefined) {
+                            await playPromise;
+                            console.log('Audio playback started successfully (fallback)');
+                        }
+                    } catch (playError) {
+                        console.error('Error playing audio:', playError);
+                        // Try to resume audio context and play again
+                        try {
+                            await initializeAudioContext();
+                            // Try playing again after ensuring context is ready
+                            await audio.play();
+                            console.log('Audio playback started after context resume');
+                        } catch (retryError) {
+                            console.error('Failed to play audio after retry:', retryError);
+                        }
+                    }
+                    
+                    return audio;
+                }
+            } catch (e) {
+                console.error('Error in playAudioFromDataUrl:', e);
+                console.error('Error details:', {
+                    message: e.message,
+                    stack: e.stack,
+                    name: e.name,
+                    toString: e.toString()
+                });
+                // Also log if it's a specific type of error
+                if (e instanceof TypeError) {
+                    console.error('TypeError - possibly audio format issue');
+                } else if (e instanceof DOMException) {
+                    console.error('DOMException - possibly audio context issue:', e.message);
+                } else if (e instanceof Error) {
+                    console.error('General Error:', e.message);
+                }
+            }
+            return null;
+        }
+
+        ws.onmessage = async (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Received WebSocket message:', data);
+                
+                if (data.type === 'declare') {
+                    console.log('Processing declare message:', data.message);
+                    declareMessage.textContent = data.message || '';
+                    declareContainer.classList.remove('hidden');
+                    
+                    // Play TTS if audio data URL is provided
+                    let audio = null;
+                    let fallbackTimeout = null;
+                    
+                    if (data.audio_data_url) {
+                        console.log('Audio data URL present, playing audio');
+                        audio = await playAudioFromDataUrl(data.audio_data_url);
+                        
+                        if (audio) {
+                            // Hide overlay when audio finishes
+                            audio.addEventListener('ended', () => {
+                                console.log('Audio ended, hiding overlay');
+                                if (fallbackTimeout) {
+                                    clearTimeout(fallbackTimeout);
+                                    fallbackTimeout = null;
+                                }
+                                declareContainer.classList.add('hidden');
+                            });
+                            
+                            // Fallback timeout in case audio doesn't fire 'ended' event
+                            // Use a generous estimate (200% of estimated duration) as safety net
+                            const wordCount = (data.message || '').split(/\s+/).length;
+                            const estimatedDuration = Math.max(5000, (wordCount / 150) * 60 * 1000 * 2); // 2x estimate for safety
+                            
+                            fallbackTimeout = setTimeout(() => {
+                                console.log('Fallback timeout reached, hiding overlay');
+                                fallbackTimeout = null;
+                                declareContainer.classList.add('hidden');
+                            }, estimatedDuration);
+                        } else {
+                            // Audio failed to load, use estimated duration
+                            const wordCount = (data.message || '').split(/\s+/).length;
+                            const duration = Math.max(3000, (wordCount / 150) * 60 * 1000);
+                            fallbackTimeout = setTimeout(() => {
+                                declareContainer.classList.add('hidden');
+                            }, duration);
+                        }
+                    } else {
+                        console.warn('No audio data URL provided');
+                        // No audio, use estimated duration
+                        const wordCount = (data.message || '').split(/\s+/).length;
+                        const duration = Math.max(3000, (wordCount / 150) * 60 * 1000);
+                        fallbackTimeout = setTimeout(() => {
+                            declareContainer.classList.add('hidden');
+                        }, duration);
+                    }
+                }
+            } catch (e) {
+                console.error('Invalid message from server:', event.data);
+            }
+        };
+        
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+        };
+        
+        ws.onclose = () => {
+            console.warn('WebSocket connection closed');
+        };
+    </script>
+</body>
+</html>
+

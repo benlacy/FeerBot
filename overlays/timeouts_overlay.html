@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeouts Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: Roboto, Arial, sans-serif;
+            color: #fff;
+        }
+        #container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: inline-block; /* shrink-to-fit container */
+            width: auto;          /* let content define width */
+            max-width: 95vw;      /* cap at viewport width */
+            padding: 20px;
+            background: rgba(0,0,0,0.45);
+            border-radius: 12px;
+            backdrop-filter: blur(2px);
+        }
+        h1 {
+            margin: 0 0 12px 0;
+            font-size: 40px;
+            color: #bd91ff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.6);
+        }
+        ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        li {
+            font-size: 36px;
+            margin: 8px 0;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.45);
+            border-radius: 8px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            white-space: nowrap; /* keep on one line so container matches longest */
+        }
+        .user { font-weight: 700; color: #ffd166; }
+        .remaining { font-weight: 600; color: #ff6b6b; }
+        #empty { font-size: 32px; opacity: 0.9; }
+    </style>
+    <script>
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                try {
+                    const payload = JSON.parse(event.data);
+                    if (payload && payload.type === 'timeouts') {
+                        renderTimeouts(payload.items || []);
+                    }
+                } catch (e) {
+                    // ignore non-JSON messages
+                }
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        function renderTimeouts(items) {
+            const list = document.getElementById('list');
+            const empty = document.getElementById('empty');
+            list.innerHTML = '';
+
+            if (!items || items.length === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            empty.style.display = 'none';
+            items.forEach(it => {
+                const li = document.createElement('li');
+                const user = document.createElement('span');
+                const sep = document.createElement('span');
+                const remaining = document.createElement('span');
+
+                user.textContent = it.user;
+                user.className = 'user';
+
+                sep.textContent = ' — ';
+
+                remaining.textContent = it.remaining;
+                remaining.className = 'remaining';
+
+                li.appendChild(user);
+                li.appendChild(sep);
+                li.appendChild(remaining);
+                list.appendChild(li);
+            });
+        }
+
+        window.onload = connectWebSocket;
+    </script>
+    </head>
+<body>
+    <div id="container">
+        <h1>Marbles Failures</h1>
+        <div id="empty">No active timeouts</div>
+        <ul id="list"></ul>
+    </div>
+</body>
+</html>
+
+

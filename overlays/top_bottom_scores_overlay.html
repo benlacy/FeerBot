@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top & Bottom Scores Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: Roboto, Arial, sans-serif;
+            color: #fff;
+        }
+        #container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: inline-block;
+            width: auto;
+            max-width: 95vw;
+            padding: 20px;
+            background: rgba(0,0,0,0.45);
+            border-radius: 12px;
+            backdrop-filter: blur(2px);
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 36px;
+            color: #bd91ff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.6);
+            text-align: left;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-align: left;
+            padding: 8px;
+            border-radius: 6px;
+        }
+        .top-title {
+            color: #4ade80;
+            background: rgba(74, 222, 128, 0.2);
+            border: 2px solid rgba(74, 222, 128, 0.4);
+        }
+        .bottom-title {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.2);
+            border: 2px solid rgba(248, 113, 113, 0.4);
+        }
+        ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        li {
+            font-size: 28px;
+            margin: 6px 0;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.45);
+            border-radius: 8px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+        }
+        .user { 
+            font-weight: 700; 
+            color: #ffd166; 
+        }
+        .score { 
+            font-weight: 600; 
+            font-size: 24px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            min-width: 50px;
+            text-align: center;
+            margin-right: 10px;
+        }
+        .score.positive {
+            color: #4ade80;
+            background: rgba(74, 222, 128, 0.2);
+            border: 2px solid rgba(74, 222, 128, 0.4);
+        }
+        .score.negative {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.2);
+            border: 2px solid rgba(248, 113, 113, 0.4);
+        }
+        .score.zero {
+            color: #94a3b8;
+            background: rgba(148, 163, 184, 0.2);
+            border: 2px solid rgba(148, 163, 184, 0.4);
+        }
+        #empty { 
+            font-size: 28px; 
+            opacity: 0.9; 
+            text-align: left;
+            padding: 20px;
+        }
+        .separator {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            margin: 15px 0;
+        }
+    </style>
+    <script>
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                try {
+                    const payload = JSON.parse(event.data);
+                    if (payload && payload.type === 'scores') {
+                        renderTopBottomScores(payload.scores || []);
+                    }
+                } catch (e) {
+                    // ignore non-JSON messages
+                }
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        function renderTopBottomScores(scores) {
+            const topList = document.getElementById('top-list');
+            const bottomList = document.getElementById('bottom-list');
+            const empty = document.getElementById('empty');
+            
+            // Clear existing content
+            topList.innerHTML = '';
+            bottomList.innerHTML = '';
+
+            if (!scores || scores.length === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            empty.style.display = 'none';
+
+            // Sort scores by value (highest first)
+            const sortedScores = [...scores].sort((a, b) => b[1] - a[1]);
+            
+            // Get top 7 and bottom 7
+            const topScores = sortedScores.slice(0, 7);
+            const bottomScores = sortedScores.slice(-7).reverse(); // Reverse to show lowest first
+
+            // Render top scores
+            topScores.forEach(([user, score]) => {
+                const li = createScoreItem(user, score);
+                topList.appendChild(li);
+            });
+
+            // Render bottom scores
+            bottomScores.forEach(([user, score]) => {
+                const li = createScoreItem(user, score);
+                bottomList.appendChild(li);
+            });
+        }
+
+        function createScoreItem(user, score) {
+            const li = document.createElement('li');
+            const scoreSpan = document.createElement('span');
+            const userSpan = document.createElement('span');
+
+            scoreSpan.textContent = score > 0 ? `+${score}` : score.toString();
+            scoreSpan.className = 'score';
+            
+            // Add appropriate class based on score value
+            if (score > 0) {
+                scoreSpan.classList.add('positive');
+            } else if (score < 0) {
+                scoreSpan.classList.add('negative');
+            } else {
+                scoreSpan.classList.add('zero');
+            }
+
+            userSpan.textContent = user;
+            userSpan.className = 'user';
+
+            li.appendChild(scoreSpan);
+            li.appendChild(userSpan);
+            return li;
+        }
+
+        window.onload = connectWebSocket;
+    </script>
+</head>
+<body>
+    <div id="container">
+        <h1>Top & Bottom Scores</h1>
+        <div id="empty">No scores yet</div>
+        
+        <div class="section">
+            <div class="section-title top-title">🏆 TOP 7</div>
+            <ul id="top-list"></ul>
+        </div>
+        
+        <div class="separator"></div>
+        
+        <div class="section">
+            <div class="section-title bottom-title">📉 BOTTOM 7</div>
+            <ul id="bottom-list"></ul>
+        </div>
+    </div>
+</body>
+</html>

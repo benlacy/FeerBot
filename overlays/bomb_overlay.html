@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomb Game Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        /* Bomb-themed background */
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d1b1b 50%, #1a1a1a 100%);
+            border: 3px solid #ff4444;
+            border-radius: 20px;
+            box-shadow: 
+                0 0 20px rgba(255, 68, 68, 0.5),
+                inset 0 0 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        /* Top corner info displays - just numbers, no boxes */
+        .top-corner {
+            position: absolute;
+            top: 10px;
+            font-size: 50px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 
+                0 0 15px rgba(255, 255, 255, 0.6),
+                0 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+        }
+
+        .top-left {
+            left: 10px;
+        }
+
+        .top-right {
+            right: 10px;
+        }
+
+        /* Timer display at top */
+        .timer-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+            margin-top: 50px;
+        }
+
+        .bomb-icon {
+            width: 80px;
+            height: 80px;
+            font-size: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: bombPulse 1.5s ease-in-out infinite;
+            filter: drop-shadow(0 0 15px rgba(255, 68, 68, 0.8));
+        }
+
+        @keyframes bombPulse {
+            0%, 100% { 
+                transform: scale(1);
+                filter: drop-shadow(0 0 15px rgba(255, 68, 68, 0.8));
+            }
+            50% { 
+                transform: scale(1.1);
+                filter: drop-shadow(0 0 25px rgba(255, 68, 68, 1));
+            }
+        }
+
+        .timer-display {
+            font-size: 80px;
+            font-weight: bold;
+            color: #ff4444;
+            text-shadow: 
+                0 0 15px rgba(255, 68, 68, 0.8),
+                0 0 30px rgba(255, 68, 68, 0.6),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 4px;
+            min-width: 200px;
+            text-align: center;
+        }
+
+        .timer-display.warning {
+            color: #ff0000;
+            animation: timerFlash 0.5s ease-in-out infinite;
+        }
+
+        @keyframes timerFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Username display */
+        .username-display {
+            font-size: 42px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 
+                0 0 15px rgba(255, 255, 255, 0.5),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+            text-align: center;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: rgba(255, 68, 68, 0.2);
+            border-radius: 12px;
+            border: 2px solid rgba(255, 68, 68, 0.5);
+        }
+
+        /* Help text */
+        .help-text {
+            font-size: 36px;
+            font-weight: normal;
+            color: #cccccc;
+            text-shadow: 
+                0 0 10px rgba(255, 255, 255, 0.3),
+                0 2px 4px rgba(0, 0, 0, 0.8);
+            text-align: center;
+            margin-top: 15px;
+            font-style: italic;
+            width: 100%;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        /* Hidden state */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Content container */
+        #content {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Waiting state */
+        .waiting {
+            font-size: 36px;
+            color: #888888;
+            font-style: italic;
+            text-align: center;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Game over screen */
+        .game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d1b1b 50%, #1a1a1a 100%);
+            border-radius: 20px;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 30px;
+            z-index: 100;
+        }
+        
+        .game-over:not(.hidden) {
+            display: flex; /* Only show when not hidden */
+        }
+
+        .exploded-bomb {
+            font-size: 150px;
+            animation: explosion 0.5s ease-out;
+            filter: drop-shadow(0 0 30px rgba(255, 68, 68, 1));
+        }
+
+        @keyframes explosion {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .loser-name {
+            font-size: 72px;
+            font-weight: bold;
+            color: #ff4444;
+            text-shadow: 
+                0 0 20px rgba(255, 68, 68, 0.8),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+            text-align: center;
+        }
+
+        .ban-duration-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 
+                0 0 15px rgba(255, 255, 255, 0.5),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="waiting" class="waiting">Waiting for game to start...</div>
+        
+        <div id="content" class="hidden">
+            <!-- Top corner displays - just numbers -->
+            <div class="top-corner top-left" id="timeout-duration">3m</div>
+            <div class="top-corner top-right" id="pass-count">0</div>
+            
+            <!-- Main timer and bomb -->
+            <div class="timer-container">
+                <div class="bomb-icon">💣</div>
+                <div class="timer-display" id="timer-display">60.0</div>
+            </div>
+            <div class="username-display" id="username-display">No one</div>
+            <div class="help-text">Type "pass @username"</div>
+        </div>
+        
+        <!-- Game over screen -->
+        <div id="game-over" class="game-over hidden">
+            <div class="exploded-bomb">💥</div>
+            <div class="loser-name" id="loser-name">No one</div>
+            <div class="ban-duration-display" id="loser-ban-duration">10s</div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+        
+        let currentHolder = null;
+        let currentTimer = 60.0;
+        let passCount = 0;
+        let banDuration = 180.0;
+        let ttsQueue = [];
+        let lastTtsUsername = null;
+        let timerInterval = null;
+        let audioContext = null;
+        let explosionAudioBuffer = null;
+
+        // TTS function using Web Speech API
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        function formatTimer(seconds) {
+            const wholeSeconds = Math.floor(seconds);
+            const tenths = Math.floor((seconds - wholeSeconds) * 10);
+            return `${wholeSeconds}.${tenths}`;
+        }
+
+        async function loadExplosionAudio() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Resume audio context if suspended (required by some browsers)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                // Load audio file if not already loaded
+                if (!explosionAudioBuffer) {
+                    const response = await fetch('../assets/explosion.mp3');
+                    const arrayBuffer = await response.arrayBuffer();
+                    explosionAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                }
+            } catch (e) {
+                console.error('Error loading explosion audio:', e);
+            }
+        }
+
+        async function playExplosionSound(passCount) {
+            try {
+                // Initialize audio context if needed
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Resume audio context if suspended (required by some browsers)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                // Load audio buffer if not already loaded
+                if (!explosionAudioBuffer) {
+                    await loadExplosionAudio();
+                }
+                
+                if (!explosionAudioBuffer) {
+                    throw new Error('Failed to load explosion audio buffer');
+                }
+                
+                // Calculate gain: base volume (0.5) + additional gain based on pass count
+                // Each pass adds 0.05 gain, capped at 2.0 (200% volume)
+                const baseGain = 0.5;
+                const additionalGain = Math.min(passCount * 0.05, 1.5); // Cap additional gain at 1.5
+                const totalGain = Math.min(baseGain + additionalGain, 2.0); // Cap total at 2.0
+                
+                // Create buffer source and gain node
+                const source = audioContext.createBufferSource();
+                const gainNode = audioContext.createGain();
+                
+                // Set buffer and gain value
+                source.buffer = explosionAudioBuffer;
+                gainNode.gain.value = totalGain;
+                
+                // Connect: source -> gain -> destination
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Play the audio
+                source.start(0);
+                
+                console.log(`Playing explosion sound with gain: ${totalGain.toFixed(2)} (pass count: ${passCount})`);
+            } catch (e) {
+                console.error('Error playing explosion sound:', e);
+                // Fallback to simple audio playback without gain control
+                try {
+                    const audio = new Audio('../assets/explosion.mp3');
+                    audio.volume = Math.min(0.5 + (passCount * 0.05), 1.0);
+                    audio.play().catch(err => console.error('Error playing explosion sound (fallback):', err));
+                } catch (fallbackError) {
+                    console.error('Error in fallback audio playback:', fallbackError);
+                }
+            }
+        }
+
+        function formatTimeoutDuration(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const remainingSeconds = seconds % 60;
+            
+            if (days > 0) {
+                const hoursPart = hours > 0 ? ` ${hours}h` : '';
+                return `${days}d${hoursPart}`;
+            }
+            if (hours > 0) {
+                const minutesPart = minutes > 0 ? ` ${minutes}m` : '';
+                return `${hours}h${minutesPart}`;
+            }
+            if (minutes > 0) {
+                return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+            }
+            return `${remainingSeconds}s`;
+        }
+
+        function updateDisplay(holder, timer, passCountValue, banDurationValue) {
+            try {
+                const content = document.getElementById('content');
+                const waiting = document.getElementById('waiting');
+                const timerDisplay = document.getElementById('timer-display');
+                const usernameDisplay = document.getElementById('username-display');
+                const passCountDisplay = document.getElementById('pass-count');
+                const timeoutDurationDisplay = document.getElementById('timeout-duration');
+                const gameOver = document.getElementById('game-over');
+
+                if (!content || !waiting) {
+                    console.error('Could not find content or waiting elements');
+                    return;
+                }
+
+                // Ensure game over is hidden unless we're showing it explicitly
+                if (gameOver && !gameOver.classList.contains('hidden')) {
+                    // Only hide if we're not in bomb_exploded state
+                    // This will be handled by the message handler
+                }
+
+                // Show content if we have a holder
+                if (holder) {
+                    // Hide game over and waiting, show content
+                    if (gameOver) {
+                        gameOver.classList.add('hidden');
+                        gameOver.style.display = 'none';
+                    }
+                    if (waiting) {
+                        waiting.classList.add('hidden');
+                        waiting.style.display = 'none';
+                    }
+                    content.classList.remove('hidden');
+                    content.style.display = 'flex'; // Explicitly set display
+                    
+                    // Update timer (always shows countdown from 60 seconds)
+                    if (timerDisplay) {
+                        timerDisplay.textContent = formatTimer(timer);
+                        
+                        // Add warning class if timer is low
+                        if (timer <= 10) {
+                            timerDisplay.classList.add('warning');
+                        } else {
+                            timerDisplay.classList.remove('warning');
+                        }
+                    }
+                    
+                    // Update username
+                    if (usernameDisplay) {
+                        usernameDisplay.textContent = holder;
+                    }
+                    
+                    // Update pass count
+                    if (passCountValue !== undefined) {
+                        passCount = passCountValue;
+                    }
+                    if (passCountDisplay) {
+                        passCountDisplay.textContent = passCount;
+                    }
+                    
+                    // Update ban duration (starts at 3 minutes, increases with passes)
+                    if (banDurationValue !== undefined) {
+                        banDuration = banDurationValue;
+                    }
+                    if (timeoutDurationDisplay) {
+                        timeoutDurationDisplay.textContent = formatTimeoutDuration(banDuration);
+                    }
+                    
+                    // Trigger TTS if holder changed
+                    if (holder !== lastTtsUsername) {
+                        speak(`${holder} has the bomb`);
+                        lastTtsUsername = holder;
+                    }
+                } else {
+                    // No holder - show waiting screen, hide everything else
+                    if (gameOver) {
+                        gameOver.classList.add('hidden');
+                        gameOver.style.display = 'none';
+                    }
+                    if (content) {
+                        content.classList.add('hidden');
+                        content.style.display = 'none';
+                    }
+                    if (waiting) {
+                        waiting.classList.remove('hidden');
+                        waiting.style.display = '';
+                    }
+                    lastTtsUsername = null;
+                    passCount = 0;
+                    banDuration = 180.0;
+                    if (passCountDisplay) {
+                        passCountDisplay.textContent = '0';
+                    }
+                    if (timeoutDurationDisplay) {
+                        timeoutDurationDisplay.textContent = formatTimeoutDuration(180);
+                    }
+                }
+            } catch (e) {
+                console.error('Error in updateDisplay:', e);
+            }
+        }
+
+        function startTimerUpdate() {
+            // Clear existing interval
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+            
+            // Only start timer if we have a holder
+            if (!currentHolder) {
+                return;
+            }
+            
+            // Update timer display every 0.1 seconds for smooth countdown
+            timerInterval = setInterval(() => {
+                if (currentHolder && currentTimer > 0) {
+                    // Decrease timer slightly (we'll get accurate updates from server)
+                    currentTimer = Math.max(0, currentTimer - 0.1);
+                    updateDisplay(currentHolder, currentTimer, passCount, banDuration);
+                } else {
+                    // Stop timer if no holder or timer expired
+                    if (timerInterval) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                    }
+                }
+            }, 100);
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to Bomb Bot WebSocket server');
+                    // Initialize display when connected
+                    initializeDisplay();
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        console.log('Received WebSocket message:', event.data);
+                        const data = JSON.parse(event.data);
+                        console.log('Parsed data:', data);
+                        
+                        if (data.type === 'bomb_update') {
+                            console.log('Processing bomb_update');
+                            // Hide game over screen if it was showing
+                            const gameOver = document.getElementById('game-over');
+                            gameOver.classList.add('hidden');
+                            
+                            currentHolder = data.holder;
+                            currentTimer = data.timer || 60.0;
+                            if (data.pass_count !== undefined) {
+                                passCount = data.pass_count;
+                            }
+                            if (data.ban_duration !== undefined) {
+                                banDuration = data.ban_duration;
+                            }
+                            updateDisplay(currentHolder, currentTimer, passCount, banDuration);
+                            startTimerUpdate();
+                        } else if (data.type === 'bomb_exploded') {
+                            // Show game over screen
+                            const gameOver = document.getElementById('game-over');
+                            const content = document.getElementById('content');
+                            const waiting = document.getElementById('waiting');
+                            const loserName = document.getElementById('loser-name');
+                            const loserBanDuration = document.getElementById('loser-ban-duration');
+                            
+                            content.classList.add('hidden');
+                            waiting.classList.add('hidden');
+                            gameOver.classList.remove('hidden');
+                            gameOver.style.display = 'flex'; // Force display
+                            
+                            loserName.textContent = data.loser || 'Unknown';
+                            loserBanDuration.textContent = formatTimeoutDuration(data.ban_duration || 10);
+                            
+                            // Play explosion sound with gain based on pass count
+                            const passCountAtExplosion = data.pass_count || 0;
+                            playExplosionSound(passCountAtExplosion);
+                            
+                            // Stop timer updates
+                            if (timerInterval) {
+                                clearInterval(timerInterval);
+                                timerInterval = null;
+                            }
+                            
+                            currentHolder = null;
+                            currentTimer = 60.0;
+                        } else if (data.type === 'bomb_reset') {
+                            // Hide game over screen, show waiting
+                            const gameOver = document.getElementById('game-over');
+                            gameOver.classList.add('hidden');
+                            
+                            // Stop timer updates
+                            if (timerInterval) {
+                                clearInterval(timerInterval);
+                                timerInterval = null;
+                            }
+                            
+                            currentHolder = null;
+                            currentTimer = 60.0;
+                            passCount = 0;
+                            banDuration = 180.0;
+                            updateDisplay(null, 60.0, 0, 180.0);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket connection closed. Reconnecting...');
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    if (ws) {
+                        ws.close();
+                    }
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        // Initialize display on page load
+        function initializeDisplay() {
+            console.log('Initializing display...');
+            const waiting = document.getElementById('waiting');
+            const content = document.getElementById('content');
+            const gameOver = document.getElementById('game-over');
+            const passCountDisplay = document.getElementById('pass-count');
+            const timeoutDurationDisplay = document.getElementById('timeout-duration');
+            
+            if (!waiting || !content || !gameOver) {
+                console.error('Missing required elements for initialization');
+                return;
+            }
+            
+            // Set initial state: show waiting, hide content and game-over
+            // Force remove hidden class first, then add it where needed
+            waiting.classList.remove('hidden');
+            content.classList.add('hidden');
+            gameOver.classList.add('hidden');
+            
+            // Double-check by forcing display styles
+            waiting.style.display = '';
+            content.style.display = 'none';
+            gameOver.style.display = 'none';
+            gameOver.classList.add('hidden'); // Ensure hidden class is present
+            
+            // Initialize values
+            if (passCountDisplay) {
+                passCountDisplay.textContent = '0';
+            }
+            if (timeoutDurationDisplay) {
+                timeoutDurationDisplay.textContent = formatTimeoutDuration(180);
+            }
+            
+            currentHolder = null;
+            currentTimer = 60.0;
+            passCount = 0;
+            banDuration = 180.0;
+            
+            console.log('Display initialized - waiting should be visible');
+        }
+
+        // Initialize
+        initializeDisplay();
+        connectWebSocket();
+        // Preload explosion audio
+        loadExplosionAudio();
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>
+

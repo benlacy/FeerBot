@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Double or Nothing Contest</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: 'Roboto', Arial, sans-serif;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        #container {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .title {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            margin-bottom: 10px;
+        }
+        
+        .current-contestant {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border: 2px solid #ffd700;
+        }
+        
+        .contestant-flag {
+            width: 40px;
+            height: 30px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .contestant-name {
+            font-size: 36px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            outline: none;
+            transition: background 0.2s;
+            border-radius: 4px;
+            padding: 5px 10px;
+        }
+        
+        .contestant-name[contenteditable]:focus {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #ffd700;
+        }
+        
+        .match-history {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .matches-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .matches-table th {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+            font-size: 20px;
+            font-weight: bold;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .matches-table td {
+            padding: 12px 15px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 18px;
+        }
+        
+        .matches-table td[contenteditable] {
+            background: rgba(255, 255, 255, 0.05);
+            outline: none;
+            transition: background 0.2s;
+            border-radius: 4px;
+        }
+        
+        .matches-table td[contenteditable]:focus {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #ffd700;
+        }
+        
+        .editable-input {
+            background: transparent;
+            border: none;
+            color: inherit;
+            font-size: inherit;
+            font-weight: inherit;
+            text-align: center;
+            width: 100%;
+            outline: none;
+        }
+        
+        .opponent-name {
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .match-result {
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        .match-result.win {
+            background: rgba(34, 197, 94, 0.3);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.5);
+        }
+        
+        .match-result.loss {
+            background: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.5);
+        }
+        
+        .match-result.pending {
+            background: rgba(156, 163, 175, 0.3);
+            color: #9ca3af;
+            border: 1px solid rgba(156, 163, 175, 0.5);
+        }
+        
+        .money-amount {
+            font-weight: bold;
+            color: #ffd700;
+            font-size: 20px;
+        }
+        
+        .empty-slot {
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        .empty-row {
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        .empty-row td[contenteditable] {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-active {
+            background: #22c55e;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+        }
+        
+        .status-completed {
+            background: #6b7280;
+        }
+        
+        .status-pending {
+            background: #f59e0b;
+        }
+    </style>
+    <script>
+        let socket;
+        let currentData = {
+            contestant: {
+                name: "Player Name",
+                country: "us",
+                flag: "https://flagcdn.com/48x36/us.png"
+            },
+            matches: [],
+            futureMatches: []
+        };
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:6790");
+
+            socket.onopen = function() {
+                console.log("Connected to WebSocket server");
+            };
+
+            socket.onmessage = function(event) {
+                try {
+                    const payload = JSON.parse(event.data);
+                    if (payload && payload.type === 'double_or_nothing') {
+                        updateOverlay(payload.data);
+                    }
+                } catch (e) {
+                    console.log("Non-JSON message received:", event.data);
+                }
+            };
+
+            socket.onclose = function() {
+                console.log("WebSocket connection closed. Attempting to reconnect...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+                socket.close();
+            };
+        }
+
+        function updateOverlay(data) {
+            if (data.contestant) {
+                currentData.contestant = data.contestant;
+            }
+            if (data.matches) {
+                currentData.matches = data.matches;
+            }
+            renderOverlay();
+        }
+
+        function renderOverlay() {
+            // Update current contestant
+            document.getElementById('contestant-name').textContent = currentData.contestant.name;
+            document.getElementById('contestant-flag').src = currentData.contestant.flag;
+            document.getElementById('contestant-flag').alt = currentData.contestant.country;
+
+            // Update match history with empty rows for future matches
+            const tbody = document.getElementById('matches-tbody');
+            tbody.innerHTML = '';
+
+            // Add existing matches
+            currentData.matches.forEach(match => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td contenteditable="true" class="opponent-name">${match.opponent || ''}</td>
+                    <td contenteditable="true">
+                        <span class="match-result ${match.result || 'pending'}">${(match.result || 'PENDING').toUpperCase()}</span>
+                    </td>
+                    <td contenteditable="true" class="money-amount">$${match.money || ''}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Add empty rows for future matches (5 empty rows)
+            for (let i = 0; i < 5; i++) {
+                const row = document.createElement('tr');
+                row.className = 'empty-row';
+                row.innerHTML = `
+                    <td contenteditable="true" class="opponent-name">Click to add opponent</td>
+                    <td contenteditable="true">
+                        <span class="match-result pending">PENDING</span>
+                    </td>
+                    <td contenteditable="true" class="money-amount">$</td>
+                `;
+                tbody.appendChild(row);
+            }
+        }
+
+        // Initialize with sample data
+        function initializeSampleData() {
+            currentData = {
+                contestant: {
+                    name: "John Doe",
+                    country: "us",
+                    flag: "https://flagcdn.com/48x36/us.png"
+                },
+                matches: [
+                    { opponent: "Player A", result: "win", money: 100 },
+                    { opponent: "Player B", result: "loss", money: 200 },
+                    { opponent: "Player C", result: "win", money: 400 }
+                ]
+            };
+            renderOverlay();
+        }
+
+        window.onload = function() {
+            initializeSampleData();
+            connectWebSocket();
+        };
+    </script>
+</head>
+<body>
+    <div id="container">
+        <div class="header">
+            <div class="title">DOUBLE OR NOTHING</div>
+        </div>
+        
+        <div class="current-contestant">
+            <img id="contestant-flag" class="contestant-flag" src="https://flagcdn.com/48x36/us.png" alt="Country Flag">
+            <div class="contestant-name" id="contestant-name" contenteditable="true">Player Name</div>
+        </div>
+        
+        <div class="match-history">
+            <div class="section-title">Match History</div>
+            <table class="matches-table">
+                <thead>
+                    <tr>
+                        <th>Opponent</th>
+                        <th>Result</th>
+                        <th>Money</th>
+                    </tr>
+                </thead>
+                <tbody id="matches-tbody">
+                    <!-- Match history will be populated here -->
+                </tbody>
+            </table>
+        </div>
+        
+    </div>
+</body>
+</html>
