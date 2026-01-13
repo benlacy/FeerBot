@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer Count Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .viewer-count-box {
+            background: rgba(0, 0, 0, 0.7);
+            border: 6px solid rgba(0, 0, 0, 0.7);
+            border-radius: 20px;
+            padding: 20px 60px 30px 60px;
+            color: white;
+            text-align: center;
+            min-width: 300px;
+            transform: scale(2);
+            transform-origin: center;
+            transition: border-color 0.3s ease, background-color 0.3s ease;
+        }
+        .viewer-count-box.green {
+            border-color: rgba(0, 255, 0, 1);
+        }
+        .viewer-count-box.green.timer-zero {
+            background: rgba(0, 128, 0, 0.7);
+        }
+        .viewer-count-box.yellow {
+            border-color: rgba(255, 255, 0, 1);
+        }
+        .viewer-count-box.yellow.timer-zero {
+            background: rgba(255, 255, 0, 0.7);
+        }
+        .viewer-count-box.red {
+            border-color: rgba(255, 0, 0, 1);
+        }
+        .viewer-count-box.red.timer-zero {
+            background: rgba(255, 0, 0, 0.7);
+        }
+        .max-viewers-label {
+            font-size: 20px;
+            color: white;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .viewer-count-label {
+            font-size: 32px;
+            color: white;
+            margin-bottom: 5px;
+        }
+        .viewer-count-number {
+            font-size: 96px;
+            font-weight: bold;
+            color: white;
+            line-height: 1.0;
+        }
+        .viewer-count-difference {
+            font-size: 96px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .viewer-count-difference.green {
+            color: rgba(0, 255, 0, 1);
+        }
+        .viewer-count-difference.yellow {
+            color: rgba(255, 255, 0, 1);
+        }
+        .viewer-count-difference.red {
+            color: rgba(255, 0, 0, 1);
+        }
+        .timer-label {
+            font-size: 24px;
+            color: white;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        .timer-display {
+            font-size: 48px;
+            color: white;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-count-box" id="viewer-count-box">
+        <div class="max-viewers-label" id="max-viewers-label">MAX VIEWERS: 0</div>
+        <div class="viewer-count-label">Current Viewers:</div>
+        <div class="viewer-count-number">
+            <span id="viewer-count">0</span>
+            <span class="viewer-count-difference" id="viewer-difference"></span>
+        </div>
+        <div class="timer-label">Timer</div>
+        <div class="timer-display" id="timer-display">15:00</div>
+    </div>
+
+    <script>
+        const viewerCountElement = document.getElementById('viewer-count');
+        const viewerDifferenceElement = document.getElementById('viewer-difference');
+        const maxViewersLabel = document.getElementById('max-viewers-label');
+        const viewerCountBox = document.getElementById('viewer-count-box');
+        const timerDisplay = document.getElementById('timer-display');
+        let ws = null;
+        let reconnectTimeout = null;
+        let maxViewers = 0;
+        let currentViewers = 0;
+        let timerSeconds = 15 * 60; // 15 minutes
+        let timerInterval = null;
+        let timerFinished = false;
+        let isBlinking = false;
+        let blinkInterval = null;
+        const wsUrl = 'ws://localhost:6790';
+        
+        // Initialize audio context early (required for OBS browser sources)
+        let audioContext = null;
+        
+        async function initializeAudioContext() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Resume audio context if suspended (required by OBS browser sources)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                    console.log('Audio context resumed');
+                }
+            } catch (e) {
+                console.error('Error initializing audio context:', e);
+            }
+        }
+        
+        // Initialize audio context on page load (critical for OBS)
+        initializeAudioContext();
+        
+        async function playAudioFile(filename) {
+            try {
+                await initializeAudioContext();
+                
+                const audio = new Audio(`../assets/${filename}`);
+                audio.volume = 1.0;
+                
+                audio.addEventListener('error', (e) => {
+                    console.error('Audio playback error:', e, audio.error);
+                });
+                
+                try {
+                    if (audioContext && audioContext.state === 'suspended') {
+                        await audioContext.resume();
+                    }
+                    await audio.play();
+                    console.log(`Playing audio: ${filename}`);
+                } catch (playError) {
+                    console.error('Error playing audio:', playError);
+                    try {
+                        await initializeAudioContext();
+                        await audio.play();
+                    } catch (retryError) {
+                        console.error('Failed to play audio after retry:', retryError);
+                    }
+                }
+            } catch (e) {
+                console.error('Error in playAudioFile:', e);
+            }
+        }
+        
+        async function playHeartbeat() {
+            try {
+                await initializeAudioContext();
+                
+                // Create a simple heartbeat beep using Web Audio API
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 200; // Low frequency for heartbeat
+                oscillator.type = 'sine';
+                
+                // Increased volume for louder heartbeat
+                gainNode.gain.setValueAtTime(0.8, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (e) {
+                console.error('Error playing heartbeat:', e);
+            }
+        }
+        
+        function startBlinking() {
+            if (isBlinking) return;
+            isBlinking = true;
+            
+            // Ensure the correct border color class is set
+            updateBackgroundColor();
+            
+            // Start blinking every second
+            blinkInterval = setInterval(() => {
+                if (timerSeconds <= 0 || timerSeconds > 30) {
+                    stopBlinking();
+                    return;
+                }
+                
+                // Ensure border color class is set correctly
+                updateBackgroundColor();
+                
+                // Toggle the timer-zero class to blink the background
+                if (viewerCountBox.classList.contains('timer-zero')) {
+                    viewerCountBox.classList.remove('timer-zero');
+                } else {
+                    viewerCountBox.classList.add('timer-zero');
+                }
+                
+                // Only play heartbeat sound if in red state (50+ under max)
+                const difference = maxViewers - currentViewers;
+                if (difference >= 50) {
+                    playHeartbeat();
+                }
+            }, 1000);
+        }
+        
+        function stopBlinking() {
+            if (!isBlinking) return;
+            isBlinking = false;
+            if (blinkInterval) {
+                clearInterval(blinkInterval);
+                blinkInterval = null;
+            }
+            // Remove timer-zero class to reset background to black
+            viewerCountBox.classList.remove('timer-zero');
+            // Ensure the correct border color class is set based on current state
+            updateBackgroundColor();
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function startTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+            stopBlinking();
+            
+            timerSeconds = 15 * 60; // Reset to 15 minutes
+            timerFinished = false;
+            timerDisplay.textContent = formatTime(timerSeconds);
+            
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                timerDisplay.textContent = formatTime(timerSeconds);
+                
+                // Start blinking and heartbeat when timer reaches 30 seconds or less
+                if (timerSeconds <= 30 && timerSeconds > 0) {
+                    if (!isBlinking) {
+                        startBlinking();
+                    }
+                } else if (timerSeconds > 30) {
+                    stopBlinking();
+                }
+                
+                if (timerSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    stopBlinking();
+                    timerFinished = true;
+                    timerDisplay.textContent = '00:00';
+                    checkViewerCountAndPlaySound().then((isRedState) => {
+                        if (isRedState) {
+                            // Red state - don't restart timer, keep it at 00:00 with red background
+                            console.log('Timer stopped - red state reached');
+                            // Background already set to red by checkViewerCountAndPlaySound
+                        } else {
+                            // Green or yellow state - wait 5 seconds then restart timer
+                            setTimeout(() => {
+                                // Reset background to black before restarting
+                                viewerCountBox.classList.remove('timer-zero');
+                                startTimer();
+                            }, 5000);
+                        }
+                    });
+                }
+            }, 1000);
+        }
+        
+        async function checkViewerCountAndPlaySound() {
+            const difference = maxViewers - currentViewers;
+            
+            // Update background color to match border when timer hits 0
+            viewerCountBox.classList.add('timer-zero');
+            
+            if (difference > 50) {
+                // More than 50 under max - play explosion (failure)
+                console.log('Viewers are more than 50 under max, playing explosion sound');
+                await playAudioFile('explosion.mp3');
+                return true; // Return true to indicate red state
+            } else {
+                // Within 50 of max (green or yellow) - play success sound
+                console.log('Viewers are within 50 of max, playing success sound');
+                await playAudioFile('sonic-ring.mp3');
+                return false; // Return false to indicate not red state
+            }
+        }
+
+        function updateBackgroundColor() {
+            // Remove all color classes
+            viewerCountBox.classList.remove('green', 'yellow', 'red');
+            viewerDifferenceElement.classList.remove('green', 'yellow', 'red');
+            
+            const difference = maxViewers - currentViewers;
+            
+            if (difference <= 25) {
+                // Green: at max or within -25
+                viewerCountBox.classList.add('green');
+                if (difference === 0) {
+                    viewerDifferenceElement.textContent = '';
+                } else {
+                    viewerDifferenceElement.textContent = `(-${difference})`;
+                    viewerDifferenceElement.classList.add('green');
+                    viewerDifferenceElement.classList.remove('yellow', 'red');
+                }
+            } else if (difference <= 50) {
+                // Yellow: -26 to -50
+                viewerCountBox.classList.add('yellow');
+                viewerDifferenceElement.textContent = `(-${difference})`;
+                viewerDifferenceElement.classList.add('yellow');
+                viewerDifferenceElement.classList.remove('red');
+            } else {
+                // Red: more than -50
+                viewerCountBox.classList.add('red');
+                viewerDifferenceElement.textContent = `(-${difference})`;
+                viewerDifferenceElement.classList.add('red');
+                viewerDifferenceElement.classList.remove('yellow');
+            }
+        }
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('Connected to WebSocket');
+                    if (reconnectTimeout) {
+                        clearTimeout(reconnectTimeout);
+                        reconnectTimeout = null;
+                    }
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'viewer_count') {
+                            if (data.count !== undefined) {
+                                currentViewers = parseInt(data.count) || 0;
+                                viewerCountElement.textContent = currentViewers.toLocaleString();
+                            }
+                            if (data.max !== undefined) {
+                                maxViewers = parseInt(data.max) || 0;
+                                maxViewersLabel.textContent = `MAX VIEWERS: ${maxViewers.toLocaleString()}`;
+                            }
+                            updateBackgroundColor();
+                        } else if (typeof data === 'number' || typeof data === 'string') {
+                            // Handle simple number/string messages (legacy support)
+                            const count = parseInt(data);
+                            if (!isNaN(count)) {
+                                currentViewers = count;
+                                viewerCountElement.textContent = count.toLocaleString();
+                                updateBackgroundColor();
+                            }
+                        }
+                    } catch (e) {
+                        // If not JSON, try parsing as number
+                        const count = parseInt(event.data);
+                        if (!isNaN(count)) {
+                            currentViewers = count;
+                            viewerCountElement.textContent = count.toLocaleString();
+                            updateBackgroundColor();
+                        }
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+                
+                ws.onclose = () => {
+                    console.log('WebSocket closed, reconnecting...');
+                    reconnectTimeout = setTimeout(connectWebSocket, 3000);
+                };
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 3000);
+            }
+        }
+
+        // Initial connection
+        connectWebSocket();
+        
+        // Start the timer
+        startTimer();
+    </script>
+</body>
+</html>
+

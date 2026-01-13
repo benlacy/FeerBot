@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .checklist-container {
+            padding: 10px;
+            max-width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow-y: auto;
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            background: transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s ease;
+            min-height: auto;
+        }
+
+        .checklist-item:hover {
+            transform: scale(1.02);
+        }
+
+        .checklist-item.checked {
+            background: transparent;
+        }
+
+        .checklist-item.checked .item-text {
+            text-decoration: line-through;
+            opacity: 0.8;
+        }
+
+        .checkbox {
+            width: 42px;
+            height: 42px;
+            border: 4px solid white;
+            border-radius: 6px;
+            margin-right: 12px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: 
+                0 0 0 2px #000,
+                0 0 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .checklist-item.checked .checkbox {
+            background: #00ff00;
+            border-color: #00ff00;
+            box-shadow: 
+                0 0 0 2px #000,
+                0 0 8px rgba(0, 255, 0, 0.6);
+        }
+
+        .checklist-item.checked .checkbox::after {
+            content: '✓';
+            color: #000;
+            font-weight: bold;
+            font-size: 32px;
+        }
+
+        .item-text {
+            color: white;
+            font-size: 52px;
+            font-weight: bold;
+            font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif;
+            flex: 1;
+            transition: all 0.3s ease;
+            text-shadow: 
+                -3px -3px 0 #000,
+                3px -3px 0 #000,
+                -3px 3px 0 #000,
+                3px 3px 0 #000,
+                0 0 6px rgba(0, 0, 0, 0.8),
+                0 0 10px rgba(0, 0, 0, 0.6);
+            -webkit-text-stroke: 3px #000;
+            letter-spacing: 0.5px;
+            line-height: 1.1;
+        }
+
+        .checklist-item.checked .item-text {
+            color: #00ff00;
+            text-shadow: 
+                -3px -3px 0 #000,
+                3px -3px 0 #000,
+                -3px 3px 0 #000,
+                3px 3px 0 #000,
+                0 0 6px rgba(0, 0, 0, 0.8),
+                0 0 10px rgba(0, 255, 0, 0.4);
+        }
+
+        .add-item-container {
+            margin-top: auto;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .add-item-input {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            color: white;
+            font-size: 18px;
+            font-family: Arial, sans-serif;
+        }
+
+        .add-item-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .add-item-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        .add-item-button {
+            margin-top: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .add-item-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .clear-button {
+            margin-top: 8px;
+            padding: 8px 16px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 2px solid rgba(255, 0, 0, 0.5);
+            border-radius: 6px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .clear-button:hover {
+            background: rgba(255, 0, 0, 0.5);
+        }
+
+        /* Hide add/remove controls by default for OBS (can be shown by adding ?edit=true to URL) */
+        .edit-controls {
+            display: none;
+        }
+
+        body.edit-mode .edit-controls {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="checklist-container" id="checklist-container">
+        <!-- Checklist items will be added here -->
+    </div>
+
+    <div class="edit-controls add-item-container">
+        <input type="text" class="add-item-input" id="add-item-input" placeholder="Add new item...">
+        <button class="add-item-button" id="add-item-button">Add Item</button>
+        <button class="clear-button" id="clear-button">Clear All</button>
+    </div>
+
+    <script>
+        // Check if edit mode is enabled via URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('edit') === 'true') {
+            document.body.classList.add('edit-mode');
+        }
+
+        // Load items from localStorage
+        function loadChecklist() {
+            const saved = localStorage.getItem('checklist_items');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+            // Default items if nothing is saved
+            return [
+                { text: '1 hr: FEER GOES MARBLE MODE', checked: true },
+                { text: '2 hr: 200 POINT TTS', checked: true },
+                { text: '3 hr: ANY EMOTE ACCEPTED', checked: false },
+                { text: '4 hr: WIN FEER\'S MONEY', checked: false },
+                { text: '5 hr: MARBLES CONTINUES TMRW', checked: false }
+            ];
+        }
+
+        // Save items to localStorage
+        function saveChecklist(items) {
+            localStorage.setItem('checklist_items', JSON.stringify(items));
+        }
+
+        // Render checklist
+        function renderChecklist() {
+            const container = document.getElementById('checklist-container');
+            const items = loadChecklist();
+            
+            // Remove edit controls from container if they exist
+            const existingEditControls = container.querySelector('.add-item-container');
+            if (existingEditControls && !document.body.classList.contains('edit-mode')) {
+                existingEditControls.remove();
+            }
+
+            container.innerHTML = '';
+            
+            items.forEach((item, index) => {
+                const itemElement = document.createElement('div');
+                itemElement.className = `checklist-item ${item.checked ? 'checked' : ''}`;
+                itemElement.innerHTML = `
+                    <div class="checkbox"></div>
+                    <div class="item-text">${escapeHtml(item.text)}</div>
+                `;
+                
+                itemElement.addEventListener('click', () => {
+                    toggleItem(index);
+                });
+                
+                container.appendChild(itemElement);
+            });
+
+            // Re-add edit controls if in edit mode
+            if (document.body.classList.contains('edit-mode')) {
+                const editControls = document.querySelector('.edit-controls');
+                if (editControls && !container.contains(editControls)) {
+                    container.appendChild(editControls);
+                }
+            }
+        }
+
+        // Toggle item checked state
+        function toggleItem(index) {
+            const items = loadChecklist();
+            items[index].checked = !items[index].checked;
+            saveChecklist(items);
+            renderChecklist();
+        }
+
+        // Add new item
+        function addItem() {
+            const input = document.getElementById('add-item-input');
+            const text = input.value.trim();
+            if (text) {
+                const items = loadChecklist();
+                items.push({ text: text, checked: false });
+                saveChecklist(items);
+                input.value = '';
+                renderChecklist();
+            }
+        }
+
+        // Clear all items
+        function clearAll() {
+            if (confirm('Are you sure you want to clear all items?')) {
+                localStorage.removeItem('checklist_items');
+                renderChecklist();
+            }
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event listeners
+        document.getElementById('add-item-button').addEventListener('click', addItem);
+        document.getElementById('add-item-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addItem();
+            }
+        });
+        document.getElementById('clear-button').addEventListener('click', clearAll);
+
+        // Initial render
+        renderChecklist();
+
+        // Allow resetting via double-click on container (when not in edit mode)
+        if (!document.body.classList.contains('edit-mode')) {
+            let lastClickTime = 0;
+            document.getElementById('checklist-container').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget || e.target.classList.contains('checklist-container')) {
+                    const currentTime = Date.now();
+                    if (currentTime - lastClickTime < 300) {
+                        // Double-click detected - reset all items
+                        const items = loadChecklist();
+                        items.forEach(item => item.checked = false);
+                        saveChecklist(items);
+                        renderChecklist();
+                    }
+                    lastClickTime = currentTime;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+

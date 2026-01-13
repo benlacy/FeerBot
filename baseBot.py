@@ -14,6 +14,8 @@ import tempfile
 import playsound
 import requests
 from gtts import gTTS
+import time
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +79,10 @@ class BaseBot(commands.Bot):
         self.tts_api_url = "https://api.console.tts.monster/generate"
         self.tts_api_token = os.getenv("TTS_MONSTER_API_TOKEN")
         self.default_voice_id = "67dbd94d-a097-4676-af2f-1db67c1eb8dd"  # Default voice ID
+        
+        # Browser for viewer count scraping (lazy initialization)
+        self._viewer_count_driver = None
+        self._viewer_count_url = None
 
     async def _token_refresh_loop(self):
         """Background task to periodically check and refresh token."""
@@ -392,6 +398,142 @@ class BaseBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error removing timeout/ban for {username}: {str(e)}")
 
+    async def add_vip(self, user_id: str, username: str) -> bool:
+        """
+        Add VIP status to a user in the channel.
+        
+        Args:
+            user_id: The Twitch user ID to grant VIP status to
+            username: The username of the user (for logging)
+            
+        Returns:
+            bool: True if successful, False otherwise
+            
+        Note:
+            Requires channel:manage:vips scope and broadcaster authentication.
+            Rate limit: 10 VIP operations per 10 seconds.
+        """
+        try:
+            self.broadcaster_id = await self.get_broadcaster_id()
+            if not self.broadcaster_id:
+                logger.error("Could not get broadcaster ID")
+                return False
+
+            url = f"https://api.twitch.tv/helix/channels/vips?broadcaster_id={self.broadcaster_id}&user_id={user_id}"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers) as response:
+                    if response.status == 204:
+                        logger.info(f"Successfully added VIP status to {username}")
+                        return True
+                    elif response.status == 200:
+                        logger.info(f"Successfully added VIP status to {username}")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        if response.status == 425:
+                            logger.error(f"Failed to add VIP to {username}: Broadcaster must complete 'Build a Community' requirements")
+                        elif response.status == 429:
+                            logger.error(f"Failed to add VIP to {username}: Rate limit exceeded (max 10 VIP operations per 10 seconds)")
+                        else:
+                            logger.error(f"Failed to add VIP to {username}. Status: {response.status}, Error: {error_text}")
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error adding VIP to {username}: {str(e)}")
+            return False
+
+    async def remove_vip(self, user_id: str, username: str) -> bool:
+        """
+        Remove VIP status from a user in the channel.
+        
+        Args:
+            user_id: The Twitch user ID to remove VIP status from
+            username: The username of the user (for logging)
+            
+        Returns:
+            bool: True if successful, False otherwise
+            
+        Note:
+            Requires channel:manage:vips scope and broadcaster authentication.
+            Rate limit: 10 VIP operations per 10 seconds.
+        """
+        try:
+            self.broadcaster_id = await self.get_broadcaster_id()
+            if not self.broadcaster_id:
+                logger.error("Could not get broadcaster ID")
+                return False
+
+            url = f"https://api.twitch.tv/helix/channels/vips?broadcaster_id={self.broadcaster_id}&user_id={user_id}"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(url, headers=headers) as response:
+                    if response.status == 204:
+                        logger.info(f"Successfully removed VIP status from {username}")
+                        return True
+                    elif response.status == 200:
+                        logger.info(f"Successfully removed VIP status from {username}")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        if response.status == 429:
+                            logger.error(f"Failed to remove VIP from {username}: Rate limit exceeded (max 10 VIP operations per 10 seconds)")
+                        else:
+                            logger.error(f"Failed to remove VIP from {username}. Status: {response.status}, Error: {error_text}")
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error removing VIP from {username}: {str(e)}")
+            return False
+
+    async def is_vip(self, user_id: str) -> bool:
+        """
+        Check if a user has VIP status in the channel.
+        
+        Args:
+            user_id: The Twitch user ID to check
+            
+        Returns:
+            bool: True if user has VIP status, False otherwise
+        """
+        try:
+            self.broadcaster_id = await self.get_broadcaster_id()
+            if not self.broadcaster_id:
+                logger.error("Could not get broadcaster ID")
+                return False
+
+            url = f"https://api.twitch.tv/helix/channels/vips?broadcaster_id={self.broadcaster_id}&user_id={user_id}"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Client-Id": self.client_id
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # If user is VIP, the API returns their data
+                        return len(data.get('data', [])) > 0
+                    elif response.status == 404:
+                        # User is not a VIP
+                        return False
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Failed to check VIP status for user {user_id}. Status: {response.status}, Error: {error_text}")
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error checking VIP status for user {user_id}: {str(e)}")
+            return False
+
     async def get_user_id(self, username: str) -> str:
         """
         Get a Twitch user's ID from their username using the Twitch API.
@@ -425,6 +567,103 @@ class BaseBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error getting user ID for {username}: {str(e)}")
             return None
+
+    def _init_viewer_count_browser(self):
+        """Lazy initialization of browser for viewer count scraping."""
+        if self._viewer_count_driver is None:
+            try:
+                from selenium import webdriver
+                from selenium.webdriver.firefox.options import Options
+                
+                options = Options()
+                options.add_argument("--headless")
+                options.set_preference("dom.webdriver.enabled", False)
+                options.set_preference("useAutomationExtension", False)
+                options.set_preference("general.useragent.override", 
+                                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
+                
+                self._viewer_count_driver = webdriver.Firefox(options=options)
+                self._viewer_count_driver.set_page_load_timeout(30)
+                logger.info("Firefox browser initialized for viewer count")
+            except Exception as e:
+                logger.error(f"Failed to initialize browser for viewer count: {e}")
+                self._viewer_count_driver = None
+    
+    async def get_viewer_count(self, stream_name: str = None):
+        """
+        Get current viewer count by scraping Twitch page.
+        
+        Args:
+            stream_name: Stream name to check (defaults to channel_name)
+        
+        Returns:
+            int: Viewer count, or None if error
+        """
+        if stream_name is None:
+            stream_name = self.channel_name
+        
+        self._init_viewer_count_browser()
+        if not self._viewer_count_driver:
+            return None
+        
+        url = f"https://www.twitch.tv/{stream_name}"
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(None, self._scrape_viewer_count, url)
+        except Exception as e:
+            logger.error(f"Error getting viewer count: {e}")
+            return None
+    
+    def _scrape_viewer_count(self, url: str):
+        """Scrape viewer count from Twitch page (synchronous)."""
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.common.exceptions import TimeoutException, NoSuchElementException
+            
+            # Keep browser open - only reload if URL changed
+            if self._viewer_count_url != url:
+                self._viewer_count_driver.get(url)
+                self._viewer_count_url = url
+                time.sleep(5)  # Wait for JavaScript to load
+            else:
+                time.sleep(2)  # Brief wait for updates
+            
+            wait = WebDriverWait(self._viewer_count_driver, 10)
+            selector = '[data-a-target="animated-channel-viewers-count"]'
+            
+            try:
+                element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                text = element.text.strip()
+                return self._parse_viewer_count(text)
+            except (TimeoutException, NoSuchElementException):
+                return 0  # Stream offline or element not found
+                
+        except Exception as e:
+            logger.error(f"Error scraping viewer count: {e}")
+            return None
+    
+    def _parse_viewer_count(self, text: str):
+        """Parse viewer count from text (handles K, M suffixes)."""
+        if not text:
+            return None
+        
+        text = text.replace(',', '').replace(' ', '').upper()
+        match = re.search(r'([\d.]+)([KM]?)', text)
+        
+        if match:
+            number = float(match.group(1))
+            suffix = match.group(2)
+            
+            if suffix == 'K':
+                return int(number * 1000)
+            elif suffix == 'M':
+                return int(number * 1000000)
+            else:
+                return int(number)
+        
+        return None
 
     async def upon_connection(self):
         # Child classes should implement

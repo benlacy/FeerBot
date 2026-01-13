@@ -30,9 +30,10 @@
         }
 
         .crown {
-            font-size: 36px;
+            width: 36px;
+            height: 36px;
             margin-right: 10px;
-            color: #ffd700;
+            object-fit: contain;
         }
 
         .king-name {
@@ -60,7 +61,10 @@
 <body>
     <div class="king-container">
         <div class="king-box">
-            <div class="king-name" id="king-name">👑 King of Marbles</div>
+            <div class="king-name" id="king-name">
+                <img src="../assets/dsc_king-4x.png" alt="Crown" class="crown">
+                King of Marbles
+            </div>
             <div class="actual-king" id="actual-king"></div>
         </div>
     </div>
