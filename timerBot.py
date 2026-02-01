@@ -31,7 +31,7 @@ load_dotenv()
 OVERLAY_WS_URL = "ws://localhost:6790"
 TIMER_DATA_FILE = "data/timer_data.json"
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8081"))
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your_webhook_secret_here")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 # Timer increment values (in seconds)
 TIER_1_TIME = 3 * 60  # 3 minutes
@@ -58,13 +58,14 @@ class TimerBot:
         # Load saved state
         self.load_timer_data()
         
-    def verify_signature(self, payload, signature, secret):
-        """Verify Twitch webhook signature."""
-        if not signature or not secret:
+    def verify_signature(self, message_id, timestamp, payload, signature, secret):
+        """Verify Twitch EventSub signature: HMAC-SHA256(secret, message_id + timestamp + body)."""
+        if not signature or not secret or not message_id or not timestamp:
             return False
+        hmac_message = message_id + timestamp + payload
         expected = 'sha256=' + hmac.new(
             secret.encode('utf-8'),
-            payload.encode('utf-8'),
+            hmac_message.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
         return hmac.compare_digest(expected, signature)
@@ -144,17 +145,21 @@ class TimerBot:
         """Handle EventSub webhook requests."""
         try:
             # Get headers
+            message_id = request.headers.get('Twitch-Eventsub-Message-Id', '')
+            timestamp = request.headers.get('Twitch-Eventsub-Message-Timestamp', '')
             signature = request.headers.get('Twitch-Eventsub-Message-Signature', '')
             message_type = request.headers.get('Twitch-Eventsub-Message-Type', '')
             
             # Get raw body
             body = await request.text()
             
-            # Verify signature
+            # Verify signature (Twitch uses message_id + timestamp + body)
             if WEBHOOK_SECRET and WEBHOOK_SECRET != "your_webhook_secret_here":
-                if not self.verify_signature(body, signature, WEBHOOK_SECRET):
+                if not self.verify_signature(message_id, timestamp, body, signature, WEBHOOK_SECRET):
                     logger.warning("Invalid webhook signature")
                     return web.Response(status=403)
+                else:
+                    logger.warning("Valid webhook signature")
             
             # Parse JSON
             data = json.loads(body)

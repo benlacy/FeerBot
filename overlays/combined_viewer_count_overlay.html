@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Combined Viewer Count Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        
+        .viewer-count-container {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            padding: 24px 36px;
+        }
+        
+        .viewer-icon {
+            width: 96px;
+            height: 96px;
+            flex-shrink: 0;
+        }
+        
+        .viewer-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .viewer-count-number {
+            font-size: 96px;
+            font-weight: 700;
+            color: #ff0000;
+            letter-spacing: -2px;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+        
+        /* Animation for updates */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+        
+        .viewer-count-number.updating {
+            animation: pulse 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-count-container">
+        <div class="viewer-icon">
+            <img src="../assets/viewercount.png" alt="Viewer count icon">
+        </div>
+        <div class="viewer-count-number" id="viewer-count">0</div>
+    </div>
+
+    <script>
+        const wsUrl = 'ws://localhost:6790';
+        let ws = null;
+        let reconnectTimeout = null;
+        let reconnectDelay = 1000; // Start with 1 second, will increase on failures
+        const viewerCountElement = document.getElementById('viewer-count');
+        let currentCount = 0;
+
+        function formatNumber(num) {
+            return num.toLocaleString('en-US');
+        }
+
+        function updateViewerCount(count) {
+            if (count === currentCount) return;
+            
+            const wasUpdating = viewerCountElement.classList.contains('updating');
+            viewerCountElement.textContent = formatNumber(count);
+            
+            if (!wasUpdating) {
+                viewerCountElement.classList.add('updating');
+                setTimeout(() => {
+                    viewerCountElement.classList.remove('updating');
+                }, 300);
+            }
+            
+            currentCount = count;
+        }
+
+        function connectWebSocket() {
+            // Clear any existing connection attempts
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            
+            // Close existing connection if any
+            if (ws && ws.readyState !== WebSocket.CLOSED) {
+                try {
+                    ws.close();
+                } catch (e) {
+                    // Ignore errors when closing
+                }
+            }
+            
+            try {
+                console.log('Attempting to connect to WebSocket:', wsUrl);
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('Connected to WebSocket for combined viewer count');
+                    if (reconnectTimeout) {
+                        clearTimeout(reconnectTimeout);
+                        reconnectTimeout = null;
+                    }
+                    // Reset reconnect delay on successful connection
+                    reconnectDelay = 1000;
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        // Handle combined viewer count data
+                        if (data.type === 'combined_viewer_count' || data.type === 'viewer_count') {
+                            const count = data.count !== undefined ? parseInt(data.count) : 
+                                         (typeof data === 'number' ? data : 
+                                         (typeof data === 'string' ? parseInt(data) : 0));
+                            if (!isNaN(count)) {
+                                updateViewerCount(count);
+                            }
+                        } else if (typeof data === 'number') {
+                            // Handle simple number messages
+                            updateViewerCount(data);
+                        } else if (typeof data === 'string') {
+                            // Handle string numbers
+                            const count = parseInt(data);
+                            if (!isNaN(count)) {
+                                updateViewerCount(count);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing WebSocket message:', e);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+                
+                ws.onclose = (event) => {
+                    console.log('WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+                    ws = null;
+                    
+                    // Exponential backoff for reconnection
+                    reconnectTimeout = setTimeout(() => {
+                        console.log('Reconnecting to WebSocket...');
+                        connectWebSocket();
+                        // Increase delay up to 10 seconds max
+                        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                    }, reconnectDelay);
+                };
+            } catch (error) {
+                console.error('Error connecting to WebSocket:', error);
+                ws = null;
+                reconnectTimeout = setTimeout(() => {
+                    console.log('Retrying WebSocket connection...');
+                    connectWebSocket();
+                    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                }, reconnectDelay);
+            }
+        }
+
+        // Initialize connection
+        connectWebSocket();
+    </script>
+</body>
+</html>

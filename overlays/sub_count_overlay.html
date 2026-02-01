@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sub Count Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .box {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            transition: background-color 0.2s ease;
+        }
+        .box.goal-met {
+            background: #22c55e;
+        }
+        .box.goal-missed {
+            background: #ef4444;
+        }
+        .sub-image {
+            width: auto;
+            height: 80px;
+            image-rendering: crisp-edges;
+        }
+        .sub-display {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 56px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            line-height: 1;
+        }
+        .sub-behind {
+            color: #fca5a5;
+            font-size: 48px;
+        }
+    </style>
+</head>
+<body>
+    <div class="box" id="box">
+        <img src="../assets/dsc_1439-4x.png" alt="Sub" class="sub-image" id="sub-image">
+        <div class="sub-display">
+            <span id="sub-count">0</span>
+            <span class="sub-behind" id="sub-behind"></span>
+        </div>
+    </div>
+
+    <script>
+        const subCountElement = document.getElementById('sub-count');
+        const subBehindElement = document.getElementById('sub-behind');
+        const boxElement = document.getElementById('box');
+        let ws = null;
+        let reconnectTimeout = null;
+        let reconnectDelay = 1000;
+        const wsUrl = 'ws://localhost:6790';
+        let currentCount = 0;
+        let currentBehind = 0;
+        let goalMet = false;
+
+        function updateDisplay() {
+            subCountElement.textContent = currentCount.toLocaleString();
+            if (goalMet || currentBehind === 0) {
+                subBehindElement.textContent = '';
+                boxElement.classList.remove('goal-missed');
+                boxElement.classList.add('goal-met');
+            } else {
+                subBehindElement.textContent = `(-${currentBehind})`;
+                boxElement.classList.remove('goal-met');
+                boxElement.classList.add('goal-missed');
+            }
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            if (ws && ws.readyState !== WebSocket.CLOSED) {
+                try { ws.close(); } catch (e) {}
+            }
+            try {
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                    reconnectDelay = 1000;
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'sub_count' && data.count !== undefined) {
+                            currentCount = parseInt(data.count) || 0;
+                            currentBehind = parseInt(data.behind) || 0;
+                            goalMet = data.goal_met === true;
+                            updateDisplay();
+                        }
+                    } catch (e) {}
+                };
+                ws.onclose = () => {
+                    ws = null;
+                    reconnectTimeout = setTimeout(() => {
+                        connectWebSocket();
+                        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                    }, reconnectDelay);
+                };
+            } catch (error) {
+                ws = null;
+                reconnectTimeout = setTimeout(() => {
+                    connectWebSocket();
+                    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                }, reconnectDelay);
+            }
+        }
+
+        connectWebSocket();
+    </script>
+</body>
+</html>

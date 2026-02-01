@@ -80,9 +80,14 @@ class BaseBot(commands.Bot):
         self.tts_api_token = os.getenv("TTS_MONSTER_API_TOKEN")
         self.default_voice_id = "67dbd94d-a097-4676-af2f-1db67c1eb8dd"  # Default voice ID
         
+        # YouTube API configuration
+        self.youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+        
         # Browser for viewer count scraping (lazy initialization)
         self._viewer_count_driver = None
         self._viewer_count_url = None
+        self._youtube_viewer_count_url = None
+        self._last_scraped_domain = None  # Track which domain we last scraped
 
     async def _token_refresh_loop(self):
         """Background task to periodically check and refresh token."""
@@ -288,7 +293,14 @@ class BaseBot(commands.Bot):
                     self.ws = websocket
                     await self.upon_connection()
                     # Keep connection alive and handle messages
-                    await websocket.wait_closed()
+                    try:
+                        async for message in websocket:
+                            try:
+                                await self.handle_websocket_message(message)
+                            except Exception as e:
+                                logger.error(f"Error handling websocket message: {e}")
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
                     
                     self.ws = None
                     logger.info("WebSocket connection closed")
@@ -300,6 +312,35 @@ class BaseBot(commands.Bot):
                 logger.error(f"Error: {e}")
                 
             await asyncio.sleep(2)
+
+    async def handle_websocket_message(self, message: str):
+        """
+        Handle incoming messages from the overlay WebSocket.
+        Child classes can override this to handle specific messages.
+        
+        Args:
+            message: The raw message string from the websocket
+        """
+        try:
+            data = json.loads(message)
+            if isinstance(data, dict) and data.get("action"):
+                # Let child classes handle specific actions
+                await self.on_websocket_action(data.get("action"), data)
+        except json.JSONDecodeError:
+            # Not JSON, ignore
+            pass
+        except Exception as e:
+            logger.debug(f"Error processing websocket message: {e}")
+
+    async def on_websocket_action(self, action: str, data: dict):
+        """
+        Handle specific websocket actions. Override in child classes.
+        
+        Args:
+            action: The action name (e.g., "get_king")
+            data: The full message data
+        """
+        pass
 
     async def send_to_overlay(self, text: str):
         """Send message using existing WebSocket connection."""
@@ -622,12 +663,22 @@ class BaseBot(commands.Bot):
             from selenium.webdriver.support import expected_conditions as EC
             from selenium.common.exceptions import TimeoutException, NoSuchElementException
             
-            # Keep browser open - only reload if URL changed
-            if self._viewer_count_url != url:
+            # Check if we're switching domains (e.g., from YouTube to Twitch)
+            current_domain = "twitch.tv"
+            if self._last_scraped_domain and self._last_scraped_domain != current_domain:
+                # Switching domains - always reload
                 self._viewer_count_driver.get(url)
                 self._viewer_count_url = url
+                self._last_scraped_domain = current_domain
+                time.sleep(5)  # Wait for JavaScript to load
+            elif self._viewer_count_url != url:
+                # Same domain, different URL - reload
+                self._viewer_count_driver.get(url)
+                self._viewer_count_url = url
+                self._last_scraped_domain = current_domain
                 time.sleep(5)  # Wait for JavaScript to load
             else:
+                # Same URL - just wait for updates
                 time.sleep(2)  # Brief wait for updates
             
             wait = WebDriverWait(self._viewer_count_driver, 10)
@@ -636,8 +687,38 @@ class BaseBot(commands.Bot):
             try:
                 element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
                 text = element.text.strip()
-                return self._parse_viewer_count(text)
+                if text:
+                    count = self._parse_viewer_count(text)
+                    if count is not None:
+                        return count
+                    else:
+                        logger.debug(f"Could not parse viewer count from text: '{text}'")
+                else:
+                    logger.debug("Viewer count element found but text is empty")
+                
+                # Try alternative selectors if primary fails
+                alternative_selectors = [
+                    '[data-a-target="animated-channel-viewers-count"]',
+                    'p[data-test-selector="animated-channel-viewers-count"]',
+                    'span[data-a-target="animated-channel-viewers-count"]',
+                ]
+                
+                for alt_selector in alternative_selectors:
+                    try:
+                        alt_element = self._viewer_count_driver.find_element(By.CSS_SELECTOR, alt_selector)
+                        alt_text = alt_element.text.strip()
+                        if alt_text:
+                            count = self._parse_viewer_count(alt_text)
+                            if count is not None:
+                                logger.debug(f"Found viewer count using alternative selector: {alt_selector}")
+                                return count
+                    except NoSuchElementException:
+                        continue
+                
+                logger.debug("Could not find viewer count element - stream may be offline")
+                return 0  # Stream offline or element not found
             except (TimeoutException, NoSuchElementException):
+                logger.debug(f"Viewer count element not found - stream may be offline or selector changed")
                 return 0  # Stream offline or element not found
                 
         except Exception as e:
@@ -664,6 +745,242 @@ class BaseBot(commands.Bot):
                 return int(number)
         
         return None
+
+    async def get_youtube_viewer_count(self, channel_id: str = "Feer", video_id: str = None, use_scraping: bool = True):
+        """
+        Get current viewer count from YouTube live stream.
+        Uses web scraping by default to avoid API quota limits.
+        
+        Args:
+            channel_id: YouTube channel handle (e.g., "Feer" for @Feer) or channel ID
+            video_id: Optional specific video/stream ID to check directly
+            use_scraping: If True, use web scraping. If False, try API first (default: True)
+        
+        Returns:
+            int: Concurrent viewer count, or None if error/not live
+        """
+        # Use web scraping by default to avoid quota issues
+        if use_scraping:
+            return await self._get_youtube_viewer_count_scraping(channel_id, video_id)
+        
+        # Fallback to API if scraping is disabled and API key is available
+        if not self.youtube_api_key:
+            logger.warning("YOUTUBE_API_KEY not set and scraping disabled. Cannot get YouTube viewer count.")
+            return None
+        
+        try:
+            # If video_id is provided, check that specific video directly
+            if video_id:
+                url = f"https://www.googleapis.com/youtube/v3/videos"
+                params = {
+                    "part": "liveStreamingDetails",
+                    "id": video_id,
+                    "key": self.youtube_api_key
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, params=params) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            items = data.get("items", [])
+                            if items:
+                                live_details = items[0].get("liveStreamingDetails", {})
+                                concurrent_viewers = live_details.get("concurrentViewers")
+                                if concurrent_viewers:
+                                    return int(concurrent_viewers)
+                                else:
+                                    logger.debug(f"YouTube video {video_id} is not live or has no concurrent viewers")
+                                    return None
+                            else:
+                                logger.debug(f"YouTube video {video_id} not found")
+                                return None
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"YouTube API error: Status {response.status}, Error: {error_text}")
+                            # Fallback to scraping if API fails
+                            return await self._get_youtube_viewer_count_scraping(channel_id, video_id)
+            
+            # If only channel_id is provided, search for active live streams
+            elif channel_id:
+                # First, search for active live broadcasts
+                search_url = f"https://www.googleapis.com/youtube/v3/search"
+                search_params = {
+                    "part": "snippet",
+                    "channelId": channel_id,
+                    "eventType": "live",
+                    "type": "video",
+                    "key": self.youtube_api_key
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(search_url, params=search_params) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            items = data.get("items", [])
+                            
+                            if not items:
+                                logger.debug(f"No active live streams found for channel {channel_id}")
+                                return None
+                            
+                            # Get the first live video ID
+                            live_video_id = items[0]["id"]["videoId"]
+                            
+                            # Now get the live stream details
+                            video_url = f"https://www.googleapis.com/youtube/v3/videos"
+                            video_params = {
+                                "part": "liveStreamingDetails",
+                                "id": live_video_id,
+                                "key": self.youtube_api_key
+                            }
+                            
+                            async with session.get(video_url, params=video_params) as video_response:
+                                if video_response.status == 200:
+                                    video_data = await video_response.json()
+                                    video_items = video_data.get("items", [])
+                                    if video_items:
+                                        live_details = video_items[0].get("liveStreamingDetails", {})
+                                        concurrent_viewers = live_details.get("concurrentViewers")
+                                        if concurrent_viewers:
+                                            return int(concurrent_viewers)
+                                        else:
+                                            logger.debug(f"YouTube stream {live_video_id} has no concurrent viewers")
+                                            return None
+                                    else:
+                                        logger.debug(f"YouTube video {live_video_id} not found")
+                                        return None
+                                else:
+                                    error_text = await video_response.text()
+                                    logger.error(f"YouTube API error getting video details: Status {video_response.status}, Error: {error_text}")
+                                    # Fallback to scraping if API fails
+                                    return await self._get_youtube_viewer_count_scraping(channel_id, None)
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"YouTube API error searching for live streams: Status {response.status}, Error: {error_text}")
+                            # Fallback to scraping if API fails
+                            return await self._get_youtube_viewer_count_scraping(channel_id, None)
+            else:
+                logger.error("Either channel_id or video_id must be provided to get_youtube_viewer_count")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting YouTube viewer count: {e}")
+            # Fallback to scraping if API fails
+            return await self._get_youtube_viewer_count_scraping(channel_id, video_id)
+    
+    async def _get_youtube_viewer_count_scraping(self, channel_id: str = None, video_id: str = None):
+        """
+        Get YouTube viewer count by scraping the live stream page.
+        
+        Args:
+            channel_id: YouTube channel handle (e.g., "Feer" for @Feer) or channel ID
+            video_id: Optional specific video/stream ID to check directly
+        
+        Returns:
+            int: Concurrent viewer count, or None if error/not live
+        """
+        self._init_viewer_count_browser()
+        if not self._viewer_count_driver:
+            return None
+        
+        # Build URL - prefer video_id if provided, otherwise use channel
+        if video_id:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        elif channel_id:
+            # Try handle format first (@channel), fallback to channel ID format
+            if channel_id.startswith("UC") and len(channel_id) > 20:
+                url = f"https://www.youtube.com/channel/{channel_id}/live"
+            else:
+                # Remove @ if present
+                handle = channel_id.lstrip('@')
+                url = f"https://www.youtube.com/@{handle}/live"
+        else:
+            logger.error("Either channel_id or video_id must be provided")
+            return None
+        
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(None, self._scrape_youtube_viewer_count, url)
+        except Exception as e:
+            logger.error(f"Error getting YouTube viewer count via scraping: {e}")
+            return None
+    
+    def _scrape_youtube_viewer_count(self, url: str):
+        """Scrape viewer count from YouTube live stream page (synchronous)."""
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.common.exceptions import TimeoutException, NoSuchElementException
+            
+            # Check if we're switching domains (e.g., from Twitch to YouTube)
+            current_domain = "youtube.com"
+            if self._last_scraped_domain and self._last_scraped_domain != current_domain:
+                # Switching domains - always reload
+                self._viewer_count_driver.get(url)
+                self._youtube_viewer_count_url = url
+                self._last_scraped_domain = current_domain
+                time.sleep(5)  # Wait for JavaScript to load
+            elif self._youtube_viewer_count_url != url:
+                # Same domain, different URL - reload
+                self._viewer_count_driver.get(url)
+                self._youtube_viewer_count_url = url
+                self._last_scraped_domain = current_domain
+                time.sleep(5)  # Wait for JavaScript to load
+            else:
+                # Same URL - just wait for updates
+                time.sleep(2)  # Brief wait for updates
+            
+            wait = WebDriverWait(self._viewer_count_driver, 10)
+            
+            # Try multiple selectors for YouTube viewer count
+            # YouTube's viewer count can appear in different places
+            selectors = [
+                'span[class*="view-count"]',  # Common viewer count selector
+                'div[class*="view-count"]',
+                'span[aria-label*="watching"]',  # "X watching" text
+                'div[id="info"] span',  # Info section
+                'ytd-live-chat-header-renderer span',  # Live chat header
+            ]
+            
+            for selector in selectors:
+                try:
+                    elements = self._viewer_count_driver.find_elements(By.CSS_SELECTOR, selector)
+                    for element in elements:
+                        text = element.text.strip()
+                        # Look for numbers that might be viewer count
+                        # YouTube shows "X watching" or just the number
+                        if text and ('watching' in text.lower() or text.replace(',', '').replace(' ', '').isdigit()):
+                            # Extract number from text
+                            numbers = re.findall(r'[\d,]+', text)
+                            if numbers:
+                                # Take the first number found
+                                count_text = numbers[0].replace(',', '')
+                                count = int(count_text)
+                                if count > 0:  # Valid viewer count
+                                    return count
+                except (TimeoutException, NoSuchElementException):
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error with selector {selector}: {e}")
+                    continue
+            
+            # Alternative: Try to find viewer count in page source
+            try:
+                page_source = self._viewer_count_driver.page_source
+                # Look for patterns like "X watching" or viewer count in metadata
+                watching_pattern = r'(\d+(?:,\d+)*)\s*watching'
+                match = re.search(watching_pattern, page_source, re.IGNORECASE)
+                if match:
+                    count_text = match.group(1).replace(',', '')
+                    return int(count_text)
+            except Exception as e:
+                logger.debug(f"Error searching page source: {e}")
+            
+            return 0  # Stream offline or element not found
+                
+        except Exception as e:
+            logger.error(f"Error scraping YouTube viewer count: {e}")
+            return None
 
     async def upon_connection(self):
         # Child classes should implement

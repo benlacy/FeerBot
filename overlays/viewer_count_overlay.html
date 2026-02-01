@@ -109,6 +109,7 @@
         const timerDisplay = document.getElementById('timer-display');
         let ws = null;
         let reconnectTimeout = null;
+        let reconnectDelay = 1000; // Start with 1 second, will increase on failures
         let maxViewers = 0;
         let currentViewers = 0;
         let timerSeconds = 15 * 60; // 15 minutes
@@ -345,7 +346,23 @@
         }
 
         function connectWebSocket() {
+            // Clear any existing connection attempts
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            
+            // Close existing connection if any
+            if (ws && ws.readyState !== WebSocket.CLOSED) {
+                try {
+                    ws.close();
+                } catch (e) {
+                    // Ignore errors when closing
+                }
+            }
+            
             try {
+                console.log('Attempting to connect to WebSocket:', wsUrl);
                 ws = new WebSocket(wsUrl);
                 
                 ws.onopen = () => {
@@ -354,12 +371,14 @@
                         clearTimeout(reconnectTimeout);
                         reconnectTimeout = null;
                     }
+                    // Reset reconnect delay on successful connection
+                    reconnectDelay = 1000;
                 };
                 
                 ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        if (data.type === 'viewer_count') {
+                        if (data.type === 'viewer_count' || data.type === 'combined_viewer_count') {
                             if (data.count !== undefined) {
                                 currentViewers = parseInt(data.count) || 0;
                                 viewerCountElement.textContent = currentViewers.toLocaleString();
@@ -393,13 +412,26 @@
                     console.error('WebSocket error:', error);
                 };
                 
-                ws.onclose = () => {
-                    console.log('WebSocket closed, reconnecting...');
-                    reconnectTimeout = setTimeout(connectWebSocket, 3000);
+                ws.onclose = (event) => {
+                    console.log('WebSocket closed. Code:', event.code, 'Reason:', event.reason);
+                    ws = null;
+                    
+                    // Exponential backoff for reconnection
+                    reconnectTimeout = setTimeout(() => {
+                        console.log('Reconnecting to WebSocket...');
+                        connectWebSocket();
+                        // Increase delay up to 10 seconds max
+                        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                    }, reconnectDelay);
                 };
             } catch (error) {
                 console.error('Failed to connect WebSocket:', error);
-                reconnectTimeout = setTimeout(connectWebSocket, 3000);
+                ws = null;
+                reconnectTimeout = setTimeout(() => {
+                    console.log('Retrying WebSocket connection...');
+                    connectWebSocket();
+                    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                }, reconnectDelay);
             }
         }
 

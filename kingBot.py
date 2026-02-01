@@ -833,6 +833,11 @@ class KingBot(BaseBot):
         data = {"king": self.king_username}
         await self.send_to_overlay(json.dumps(data))
 
+    async def on_websocket_action(self, action: str, data: dict):
+        """Handle websocket actions, specifically 'get_king' requests."""
+        if action == "get_king":
+            await self.send_king_to_overlay()
+1
 if __name__ == "__main__":
     bot = KingBot()
     bot.run() 
