@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Begathon Timer Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            border-radius: 20px;
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #f5e6d3 0%, #e8d5c4 50%, #f5e6d3 100%);
+            overflow: hidden;
+            border-radius: 20px;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            padding: 20px;
+        }
+
+        /* Timer Display - like MMR in rlrank */
+        .timer-display {
+            font-size: 120px;
+            font-weight: bold;
+            color: #3b82f6;
+            text-shadow:
+                0 0 20px rgba(59, 130, 246, 0.8),
+                0 0 40px rgba(59, 130, 246, 0.6),
+                0 4px 8px rgba(0, 0, 0, 0.3);
+            margin-bottom: 0;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 4px;
+            transition: all 0.3s ease;
+            text-align: center;
+            width: 100%;
+            z-index: 15;
+            position: relative;
+        }
+
+        .timer-display.urgent {
+            color: #ef4444;
+            text-shadow:
+                0 0 20px rgba(239, 68, 68, 0.8),
+                0 0 40px rgba(239, 68, 68, 0.6),
+                0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Chart Container - takes up most of overlay, can overlap timer slightly */
+        .chart-container {
+            width: 100%;
+            height: 55vh;
+            min-height: 200px;
+            position: relative;
+            margin-top: -25px;
+            flex: 1;
+            z-index: 5;
+        }
+
+        .chart-line {
+            stroke: #ff6b6b;
+            stroke-width: 12;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.6));
+            transition: all 0.5s ease;
+        }
+
+        .cat-image {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            z-index: 20;
+            pointer-events: none;
+            transition: all 0.5s ease;
+            transform: translate(-50%, -50%);
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+            animation: catBounce 2s ease-in-out infinite;
+            display: none;
+        }
+
+        @keyframes catBounce {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        .cat-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .waiting {
+            font-size: 36px;
+            color: #888888;
+            font-style: italic;
+            text-align: center;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #content {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            justify-content: flex-start;
+        }
+    </style>
+</head>
+<body>
+    <div class="background"></div>
+
+    <div class="container">
+        <div id="waiting" class="waiting">Waiting for timer data...</div>
+
+        <div id="content" class="hidden">
+            <div class="timer-display" id="timer-display">00:00</div>
+
+            <div class="chart-container">
+                <svg id="chart-svg" width="100%" height="100%" viewBox="0 0 800 400" preserveAspectRatio="none">
+                    <!-- Chart will be drawn here -->
+                </svg>
+                <div class="cat-image" id="cat-image">
+                    <img src="../assets/dsc_1439-4x.png" alt="Cat in bag">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+
+        let timerSeconds = 0;
+        let timerHistory = [];
+        let countdownInterval = null;
+
+        // Format seconds as MM:SS, or H:MM:SS when >= 60 minutes
+        function formatTime(seconds) {
+            const s = Math.max(0, Math.floor(seconds));
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            if (h > 0) {
+                return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            }
+            return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        }
+
+        function updateTimerDisplay() {
+            const el = document.getElementById('timer-display');
+            el.textContent = formatTime(timerSeconds);
+            el.classList.toggle('urgent', timerSeconds > 0 && timerSeconds <= 60);
+        }
+
+        function drawChart(history) {
+            const svg = document.getElementById('chart-svg');
+            svg.innerHTML = '';
+
+            if (history.length === 0) return;
+
+            const width = 800;
+            const height = 400;
+            const padding = 40;
+            const chartWidth = width - 2 * padding;
+            const chartHeight = height - 2 * padding;
+
+            const values = history.map(e => e.timer_seconds);
+            const minVal = Math.min(...values);
+            const maxVal = Math.max(...values);
+            const range = maxVal - minVal || 1;
+
+            const points = history.map((entry, index) => {
+                const x = padding + (index / (history.length - 1 || 1)) * chartWidth;
+                // High timer = top (y near padding), low timer = bottom. When range is 0, put at top (initial state).
+                const normalized = range > 0 ? (entry.timer_seconds - minVal) / range : 1;
+                const y = padding + chartHeight - normalized * chartHeight;
+                return { x, y, val: entry.timer_seconds };
+            });
+
+            if (points.length >= 2) {
+                let pathData = `M ${points[0].x} ${points[0].y} `;
+                for (let i = 1; i < points.length; i++) {
+                    const prev = points[i - 1];
+                    const curr = points[i];
+                    const ctrlX = (prev.x + curr.x) / 2;
+                    const ctrlY = (prev.y + curr.y) / 2;
+                    pathData += `Q ${prev.x} ${prev.y} ${ctrlX} ${ctrlY} L ${curr.x} ${curr.y} `;
+                }
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathData);
+                path.setAttribute('class', 'chart-line');
+                svg.appendChild(path);
+            }
+
+            // Position cat image at the end of the graph
+            if (points.length > 0) {
+                const lastPoint = points[points.length - 1];
+                const catImage = document.getElementById('cat-image');
+                const xPercent = (lastPoint.x / width) * 100;
+                const yPercent = (lastPoint.y / height) * 100;
+                catImage.style.left = xPercent + '%';
+                catImage.style.top = yPercent + '%';
+                catImage.style.display = 'block';
+            } else {
+                document.getElementById('cat-image').style.display = 'none';
+            }
+
+            if (points.length === 1) {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', points[0].x);
+                circle.setAttribute('cy', points[0].y);
+                circle.setAttribute('r', '8');
+                circle.setAttribute('fill', '#ff6b6b');
+                circle.setAttribute('filter', 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.6))');
+                svg.appendChild(circle);
+            }
+        }
+
+        function updateFromServer(data) {
+            if (data.timer_seconds !== undefined) {
+                timerSeconds = data.timer_seconds;
+            }
+            if (data.timer_history) {
+                timerHistory = data.timer_history;
+            }
+            updateTimerDisplay();
+            drawChart(timerHistory);
+            document.getElementById('waiting').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        function startCountdown() {
+            if (countdownInterval) clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                if (timerSeconds > 0) {
+                    timerSeconds -= 1;
+                    updateTimerDisplay();
+                }
+            }, 1000);
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            try {
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    console.log('Connected to Begathon WebSocket');
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'begathon_timer') {
+                            updateFromServer(data);
+                            startCountdown();
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+                ws.onclose = () => {
+                    console.log('WebSocket closed. Reconnecting...');
+                    reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                };
+                ws.onerror = (err) => {
+                    console.error('WebSocket error:', err);
+                    ws.close();
+                };
+            } catch (err) {
+                console.error('Failed to create WebSocket:', err);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        connectWebSocket();
+
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (ws) ws.close();
+        });
+    </script>
+</body>
+</html>

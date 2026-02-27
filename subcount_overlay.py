@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 EventSub Subscribe Setup - Connects a webhook, subscribes to Twitch EventSub for
-channel.subscribe and channel.subscription.gift on the Feer channel, and sends
+channel.subscription.message (share on stream) and channel.subscription.gift on the Feer channel, and sends
 the sub count to the OBS overlay (sub_count_overlay.html) via WebSocket.
 
-Every step is heavily logged so you can see exactly how the flow works.
-Requires: WEBHOOK_BASE_URL (HTTPS, e.g. from ngrok), WEBHOOK_SECRET, and .env credentials.
-Run server.py (WebSocket server on ws://localhost:6790) for overlay updates.
+Requires: WEBHOOK_BASE_URL (HTTPS, e.g. ngrok), WEBHOOK_SECRET, and .env credentials.
+Run server.py (ws://localhost:6790) for overlay updates.
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -24,18 +24,13 @@ from aiohttp import web
 import aiohttp
 import websockets
 
-# --- Logging: as much as possible so you can follow the flow ---
+# --- Logging: messages and setup only ---
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+    format="%(asctime)s %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-# Also print to stdout so it's visible when running
-console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)
-logger.addHandler(console)
 
 # Silence websockets library PING/PONG keepalive spam
 logging.getLogger("websockets").setLevel(logging.WARNING)
@@ -93,6 +88,22 @@ def _compute_sub_goal() -> tuple[int, int]:
     return goal, behind
 
 
+def _parse_twitch_timestamp(ts: str) -> datetime | None:
+    """Parse Twitch RFC3339 timestamp (may include nanoseconds)."""
+    if not ts:
+        return None
+    # Twitch uses nanoseconds; Python fromisoformat supports up to 6 (microseconds)
+    s = ts.replace("Z", "+00:00")
+    if len(s) > 26 and s[19] == ".":  # has fractional seconds
+        frac = s[20:-6]  # digits between . and +00:00
+        if len(frac) > 6:
+            s = s[:20 + 6] + s[-6:]  # truncate to microseconds
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
 async def _get_stream_uptime_seconds(broadcaster_id: str, app_token: str, client_id: str) -> int | None:
     """Return stream uptime in seconds, or None if offline."""
     url = f"https://api.twitch.tv/helix/streams?user_id={broadcaster_id}"
@@ -100,6 +111,7 @@ async def _get_stream_uptime_seconds(broadcaster_id: str, app_token: str, client
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
+                logger.warning("Streams API status %s: %s", resp.status, (await resp.text())[:200])
                 return None
             data = await resp.json()
             streams = data.get("data", [])
@@ -108,25 +120,32 @@ async def _get_stream_uptime_seconds(broadcaster_id: str, app_token: str, client
             started_at = streams[0].get("started_at")
             if not started_at:
                 return None
-            start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            start = _parse_twitch_timestamp(started_at)
+            if start is None:
+                logger.warning("Could not parse started_at: %s", started_at[:50])
+                return None
             return int((datetime.now(timezone.utc) - start).total_seconds())
 
 
 async def _stream_uptime_check_loop() -> None:
-    """Check stream uptime on startup and every 60 seconds; update overlay."""
+    """Check stream uptime on startup and every 30 seconds; update overlay."""
     global _stream_uptime_seconds, _app_token, _client_id, _client_secret, _broadcaster_id
     while True:
         try:
-            if _client_id and _broadcaster_id:
-                if _app_token is None and _client_secret:
-                    _app_token = await get_app_access_token(_client_id, _client_secret)
-                if _app_token:
-                    uptime = await _get_stream_uptime_seconds(_broadcaster_id, _app_token, _client_id)
-                    _stream_uptime_seconds = uptime if uptime is not None else 0
-                    await _send_subcount_to_overlay()
-        except Exception:
-            pass
-        await asyncio.sleep(60)
+            if not _client_id or not _broadcaster_id:
+                await asyncio.sleep(30)
+                continue
+            if _app_token is None and _client_secret:
+                _app_token = await get_app_access_token(_client_id, _client_secret)
+            if not _app_token:
+                await asyncio.sleep(30)
+                continue
+            uptime = await _get_stream_uptime_seconds(_broadcaster_id, _app_token, _client_id)
+            _stream_uptime_seconds = uptime if uptime is not None else 0
+            await _send_subcount_to_overlay()
+        except Exception as e:
+            logger.exception("Stream uptime check failed: %s", e)
+        await asyncio.sleep(30)
 
 
 async def _send_subcount_to_overlay() -> bool:
@@ -152,24 +171,15 @@ async def _send_subcount_to_overlay() -> bool:
         return False
 
 
-# --- Configuration (with logging of what we load) ---
+# --- Configuration ---
 def load_config():
-    """Load and validate config; log every value (secrets masked)."""
-    logger.info("========== LOADING CONFIGURATION ==========")
+    """Load and validate config."""
     client_id = os.getenv("TWITCH_APP_CLIENT_ID")
     client_secret = os.getenv("TWITCH_APP_CLIENT_SECRET")
     broadcaster_id = os.getenv("BROADCASTER_ID")
     webhook_secret = os.getenv("WEBHOOK_SECRET")
     webhook_port = int(os.getenv("WEBHOOK_PORT", "8081"))
-    # This must be your public HTTPS URL (e.g. from ngrok). Twitch will send requests here.
     webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
-
-    logger.info("TWITCH_APP_CLIENT_ID = %s", (client_id[:8] + "..." if client_id else "NOT SET"))
-    logger.info("TWITCH_APP_CLIENT_SECRET = %s", ("***" if client_secret else "NOT SET"))
-    logger.info("BROADCASTER_ID (Feer channel) = %s", broadcaster_id or "NOT SET")
-    logger.info("WEBHOOK_SECRET = %s", ("***" if webhook_secret else "NOT SET"))
-    logger.info("WEBHOOK_PORT (local server) = %s", webhook_port)
-    logger.info("WEBHOOK_BASE_URL (public HTTPS URL for Twitch to call) = %s", webhook_base_url or "NOT SET")
 
     if not all([client_id, client_secret, broadcaster_id, webhook_secret]):
         raise ValueError("Missing required env: TWITCH_APP_CLIENT_ID, TWITCH_APP_CLIENT_SECRET, BROADCASTER_ID, WEBHOOK_SECRET")
@@ -206,30 +216,21 @@ def verify_signature(message_id: str, timestamp: str, body: str, signature: str,
 
 
 async def get_app_access_token(client_id: str, client_secret: str) -> str:
-    """
-    Get an app access token using client_credentials.
-    EventSub subscription creation with webhooks requires an APP access token (not user token).
-    """
-    logger.info("========== REQUESTING APP ACCESS TOKEN ==========")
+    """Get an app access token using client_credentials."""
     url = "https://id.twitch.tv/oauth2/token"
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
         "grant_type": "client_credentials",
     }
-    logger.info("POST %s (grant_type=client_credentials)", url)
     async with aiohttp.ClientSession() as session:
         async with session.post(url, data=payload) as resp:
             text = await resp.text()
-            logger.info("OAuth response status = %s", resp.status)
-            logger.debug("OAuth response body = %s", text[:500])
             if resp.status != 200:
-                logger.error("Failed to get app token: %s", text)
+                logger.error("App token failed: %s", text[:200])
                 raise RuntimeError(f"OAuth failed: {text}")
             data = json.loads(text)
-            token = data["access_token"]
-            logger.info("App access token obtained (length=%d)", len(token))
-            return token
+            return data["access_token"]
 
 
 async def delete_existing_eventsub(
@@ -239,7 +240,6 @@ async def delete_existing_eventsub(
     List EventSub subscriptions and delete any subscription of sub_type for this broadcaster.
     This avoids 409 Conflict when re-running the script.
     """
-    logger.info("========== CHECKING EXISTING EVENTSUB SUBSCRIPTIONS (%s) ==========", sub_type)
     url = "https://api.twitch.tv/helix/eventsub/subscriptions"
     headers = {
         "Authorization": f"Bearer {app_token}",
@@ -260,10 +260,9 @@ async def delete_existing_eventsub(
             ]
             for sub in to_delete:
                 sub_id = sub.get("id")
-                logger.info("Deleting existing subscription: id=%s type=%s", sub_id, sub.get("type"))
                 async with session.delete(url, params={"id": sub_id}, headers=headers) as del_resp:
                     if del_resp.status in (204, 200):
-                        logger.info("Deleted subscription %s", sub_id)
+                        logger.info("Removed existing %s", sub_type)
                     else:
                         logger.warning("Delete failed for %s: %s", sub_id, await del_resp.text())
 
@@ -281,7 +280,6 @@ async def create_eventsub_subscription(
     Create one EventSub subscription for the given sub_type.
     Twitch will then POST to callback_url for verification and for events.
     """
-    logger.info("========== CREATING EVENTSUB SUBSCRIPTION (%s) ==========", sub_type)
     url = "https://api.twitch.tv/helix/eventsub/subscriptions"
     body = {
         "type": sub_type,
@@ -293,8 +291,6 @@ async def create_eventsub_subscription(
             "secret": secret,
         },
     }
-    logger.info("POST %s", url)
-    logger.info("Request body: %s", json.dumps(body, indent=2))
     headers = {
         "Authorization": f"Bearer {app_token}",
         "Client-Id": client_id,
@@ -303,22 +299,13 @@ async def create_eventsub_subscription(
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=body, headers=headers) as resp:
             response_text = await resp.text()
-            logger.info("EventSub API response status = %s", resp.status)
-            logger.info("EventSub API response body = %s", response_text[:1000])
             if resp.status == 202:
                 data = json.loads(response_text)
                 sub = data.get("data", [{}])[0]
-                logger.info("Subscription created: id=%s status=%s", sub.get("id"), sub.get("status"))
-                logger.info(
-                    "Twitch will send a verification request to your callback; "
-                    "once we respond with the challenge, status will become 'enabled'."
-                )
+                logger.info("Subscribed: %s (pending verification)", sub_type)
                 return
             if resp.status == 409:
-                logger.info(
-                    "Subscription already exists (same type+condition). "
-                    "Continuing — webhook server will still receive events."
-                )
+                logger.info("Subscribed: %s (already exists)", sub_type)
                 return
             logger.error("EventSub subscription failed: %s", response_text)
             if resp.status == 401:
@@ -332,84 +319,93 @@ async def create_eventsub_subscription(
             raise RuntimeError(f"EventSub create failed: {response_text}")
 
 
+async def _check_subscription_status(
+    subscription_id: str, app_token: str, client_id: str
+) -> str | None:
+    """Return subscription status ('enabled', 'webhook_callback_verification_pending', etc.) or None."""
+    url = "https://api.twitch.tv/helix/eventsub/subscriptions"
+    headers = {"Authorization": f"Bearer {app_token}", "Client-Id": client_id}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params={"subscription_id": subscription_id}, headers=headers) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            subs = data.get("data", [])
+            if not subs:
+                return None
+            return subs[0].get("status")
+
+
+async def _log_verification_result(
+    subscription_id: str, sub_type: str, app_token: str, client_id: str
+) -> None:
+    """After a short delay, check if Twitch marked the subscription enabled and log."""
+    await asyncio.sleep(3)
+    status = await _check_subscription_status(subscription_id, app_token, client_id)
+    if status == "enabled":
+        logger.info("Verification accepted: %s is enabled", sub_type)
+    elif status:
+        logger.warning("Verification pending or failed: %s status=%s (check ngrok/Twitch)", sub_type, status)
+    else:
+        logger.warning("Could not check verification result for %s", sub_type)
+
+
 async def handle_eventsub(request: web.Request, webhook_secret: str):
-    """
-    Handle incoming Twitch EventSub requests: verification challenge and notifications.
-    Log everything so you can see the flow.
-    """
+    """Handle Twitch EventSub: verification challenge and notifications."""
     global _sub_count
-    logger.info("========== INCOMING WEBHOOK REQUEST ==========")
-    logger.info("Method: %s", request.method)
-    logger.info("Path: %s", request.path)
-    # Log relevant headers (Twitch sends these)
-    for name in ("Twitch-Eventsub-Message-Id", "Twitch-Eventsub-Message-Type", "Twitch-Eventsub-Message-Signature", "Twitch-Eventsub-Message-Timestamp"):
-        val = request.headers.get(name, "")
-        logger.info("Header %s: %s", name, val[:80] + "..." if len(val) > 80 else val)
-
     body = await request.text()
-    logger.info("Body length: %d bytes", len(body))
-    logger.debug("Body (first 500 chars): %s", body[:500])
-
     message_id = request.headers.get("Twitch-Eventsub-Message-Id", "")
     timestamp = request.headers.get("Twitch-Eventsub-Message-Timestamp", "")
     signature = request.headers.get("Twitch-Eventsub-Message-Signature", "")
     if webhook_secret and not verify_signature(message_id, timestamp, body, signature, webhook_secret):
-        logger.warning("Signature verification FAILED - rejecting request")
+        logger.warning("Webhook: signature FAILED")
         return web.Response(status=403, text="Forbidden")
-    logger.info("Signature verification OK")
 
     try:
         data = json.loads(body)
     except json.JSONDecodeError as e:
-        logger.error("Invalid JSON: %s", e)
+        logger.error("Webhook: invalid JSON %s", e)
         return web.Response(status=400, text="Bad Request")
 
     message_type = request.headers.get("Twitch-Eventsub-Message-Type", "")
-    logger.info("Message type: %s", message_type)
 
     if message_type == "webhook_callback_verification":
         challenge = data.get("challenge", "")
-        logger.info("Twitch sent a verification challenge. We must respond with this challenge so Twitch knows we own the URL.")
-        logger.info("Challenge (first 50 chars): %s...", challenge[:50])
-        logger.info("Responding with 200 OK and body = challenge.")
-        return web.Response(text=challenge)
+        body_bytes = challenge.encode("utf-8")
+        sub = data.get("subscription") or {}
+        sub_type = sub.get("type", "?")
+        sub_id = sub.get("id")
+        logger.info("Webhook: verification (%s) -> responded with challenge", sub_type)
+        if sub_id and _app_token and _client_id:
+            asyncio.create_task(
+                _log_verification_result(sub_id, sub_type, _app_token, _client_id)
+            )
+        return web.Response(status=200, body=body_bytes, content_type="text/plain")
 
     if message_type == "notification":
         subscription = data.get("subscription", {})
         event = data.get("event", {})
         sub_type = subscription.get("type", "")
-        logger.info("Notification for subscription type: %s", sub_type)
-        logger.info("Subscription id: %s", subscription.get("id"))
-        logger.info("Event payload: %s", json.dumps(event, indent=2))
-        if sub_type == "channel.subscribe":
+        if sub_type == "channel.subscription.message":
+            # Fires when viewer shares their sub on stream (resub message / share)
             user_name = event.get("user_name") or event.get("user_login", "?")
-            tier = event.get("tier", "?")
-            is_gift = event.get("is_gift", False)
-            logger.info(">>> channel.subscribe: user=%s tier=%s is_gift=%s", user_name, tier, is_gift)
-            if not is_gift:
-                _sub_count += 1
-                _save_sub_count()
-                await _send_subcount_to_overlay()
+            _sub_count += 1
+            _save_sub_count()
+            await _send_subcount_to_overlay()
+            logger.info("Webhook: share -> %s (count=%d)", user_name, _sub_count)
         elif sub_type == "channel.subscription.gift":
             user_name = event.get("user_name") or event.get("user_login", "?")
             total = event.get("total", 1)
-            cumulative_total = event.get("cumulative_total", "?")
-            is_anonymous = event.get("is_anonymous", False)
-            logger.info(
-                ">>> channel.subscription.gift: user=%s total=%s cumulative_total=%s is_anonymous=%s",
-                user_name, total, cumulative_total, is_anonymous,
-            )
             _sub_count += total
             _save_sub_count()
             await _send_subcount_to_overlay()
-        logger.info("Responding with 200 OK (so Twitch does not retry).")
+            logger.info("Webhook: gift -> %s x%d (count=%d)", user_name, total, _sub_count)
         return web.Response(status=200)
 
     if message_type == "revocation":
-        logger.info("Twitch sent a revocation (subscription was revoked). Payload: %s", json.dumps(data, indent=2))
+        logger.info("Webhook: subscription revoked")
         return web.Response(status=200)
 
-    logger.info("Unknown message type; responding 200 anyway")
     return web.Response(status=200)
 
 
@@ -435,9 +431,11 @@ async def _overlay_websocket_loop() -> None:
 
 @web.middleware
 async def log_all_requests(request: web.Request, handler):
-    """Log every request as soon as it hits the server (so you can confirm traffic reaches this process)."""
-    logger.info(">>> REQUEST RECEIVED: %s %s", request.method, request.path)
+    """Log request and pass to handler."""
     try:
+        if request.method == "POST" and request.path == "/eventsub":
+            msg_type = request.headers.get("Twitch-Eventsub-Message-Type", "?")
+            logger.info("  -> POST /eventsub %s", msg_type)
         return await handler(request)
     except Exception as e:
         logger.exception("Handler error: %s", e)
@@ -446,8 +444,6 @@ async def log_all_requests(request: web.Request, handler):
 
 async def run_webhook_server(webhook_port: int, webhook_secret: str):
     """Start the local HTTP server that receives Twitch webhooks."""
-    logger.info("========== STARTING WEBHOOK SERVER ==========")
-    logger.info("Binding to 0.0.0.0:%s (so that ngrok or other tunnel can forward to this process)", webhook_port)
     app = web.Application(middlewares=[log_all_requests])
     app.router.add_post("/eventsub", lambda r: handle_eventsub(r, webhook_secret))
 
@@ -462,39 +458,64 @@ async def run_webhook_server(webhook_port: int, webhook_secret: str):
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", webhook_port)
     await site.start()
-    logger.info("Webhook server is listening on http://0.0.0.0:%s/eventsub", webhook_port)
-    logger.info("Twitch will send POST requests to: <WEBHOOK_BASE_URL>/eventsub")
+    logger.info("Webhook server: 0.0.0.0:%s/eventsub", webhook_port)
     return runner
 
 
-async def main():
-    logger.info("========== EVENTSUB SUBSCRIBE SETUP (channel.subscribe + channel.subscription.gift for Feer) ==========")
+async def _check_webhook_reachable(callback_url: str, webhook_port: int) -> None:
+    """Verify WEBHOOK_BASE_URL reaches our server (e.g. ngrok tunnel). Exit with clear message if not."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(callback_url) as resp:
+                # Must get 2xx from our health endpoint; 502/503 means tunnel not connected
+                if 200 <= resp.status < 300:
+                    return
+                logger.debug("Reachability check: %s returned status %s", callback_url, resp.status)
+    except asyncio.TimeoutError:
+        logger.debug("Reachability check: timeout")
+    except Exception as e:
+        logger.debug("Reachability check failed: %s", e)
+    logger.error(
+        "Cannot reach %s — Twitch will not be able to verify the webhook.",
+        callback_url,
+    )
+    logger.error("Start ngrok first, then run this script. Example: ngrok http %s", webhook_port)
+    raise SystemExit(1)
+
+
+async def main(keep_sub_count: bool = False):
+    global _client_id, _broadcaster_id, _app_token, _client_secret, _sub_count
     config = load_config()
     webhook_secret = config["webhook_secret"]
     webhook_port = config["webhook_port"]
     webhook_base_url = config["webhook_base_url"]
     callback_url = f"{webhook_base_url}/eventsub" if webhook_base_url else None
 
-    # Load sub count and start overlay WebSocket task
-    _load_sub_count()
+    if keep_sub_count:
+        _load_sub_count()
+        logger.info("Sub count: %d (kept)", _sub_count)
+    else:
+        _sub_count = 0
+        _save_sub_count()
+        logger.info("Sub count: 0 (reset)")
     overlay_task = asyncio.create_task(_overlay_websocket_loop())
 
     # Start server first so we're ready for Twitch's verification request
     runner = await run_webhook_server(webhook_port, webhook_secret)
 
     if callback_url:
-        logger.info("========== STEP 1: Get app access token ==========")
+        await _check_webhook_reachable(callback_url, webhook_port)
         app_token = await get_app_access_token(config["client_id"], config["client_secret"])
+        logger.info("App token: OK")
         _app_token = app_token
         _client_id = config["client_id"]
         _client_secret = config["client_secret"]
         _broadcaster_id = config["broadcaster_id"]
-        for sub_type in ("channel.subscribe", "channel.subscription.gift"):
-            logger.info("========== Remove existing %s (if any) ==========", sub_type)
+        for sub_type in ("channel.subscription.message", "channel.subscription.gift"):
             await delete_existing_eventsub(
                 app_token, config["client_id"], config["broadcaster_id"], sub_type
             )
-            logger.info("========== Create EventSub subscription: %s ==========", sub_type)
             await create_eventsub_subscription(
                 app_token,
                 config["client_id"],
@@ -504,18 +525,15 @@ async def main():
                 sub_type=sub_type,
                 version="1",
             )
-        logger.info("Setup complete. Twitch will POST to your callback; watch logs for verification and events.")
+        logger.info("Setup complete. Waiting for Twitch verification and events.")
     else:
-        logger.warning("WEBHOOK_BASE_URL not set. Only running webhook server (no subscription created).")
-        logger.info("Set WEBHOOK_BASE_URL to your public HTTPS URL (e.g. https://xxxx.ngrok.io) and restart to create the subscription.")
+        logger.warning("WEBHOOK_BASE_URL not set; no subscriptions created.")
         _client_id = config["client_id"]
         _client_secret = config["client_secret"]
         _broadcaster_id = config["broadcaster_id"]
 
-    # Start stream uptime check (on startup + every 60s)
     stream_check_task = asyncio.create_task(_stream_uptime_check_loop())
-
-    logger.info("Server running. Press Ctrl+C to stop.")
+    logger.info("Server running.")
     try:
         while True:
             await asyncio.sleep(3600)
@@ -533,12 +551,18 @@ async def main():
         except asyncio.CancelledError:
             pass
         await runner.cleanup()
-        logger.info("Webhook server stopped.")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="EventSub sub count + overlay for Feer channel")
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        help="Keep the previous sub count from last run (default: reset to 0)",
+    )
+    args = parser.parse_args()
     try:
-        asyncio.run(main())
+        asyncio.run(main(keep_sub_count=args.keep))
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     except Exception as e:

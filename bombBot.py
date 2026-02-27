@@ -251,16 +251,16 @@ class BombBot(BaseBot):
         # Process commands first (this is needed for !ignite to work)
         await self.handle_commands(message)
         
-        # Handle "pass @username" command (not a Twitch command, just text parsing)
-        if content.lower().startswith("pass @"):
+        # Handle "pass @username" or "pass username" command (not a Twitch command, just text parsing)
+        if content.lower().startswith("pass "):
             logger.debug(f"{username} attempted to pass the bomb")
             # Only the current bomb holder can pass
             if self.current_bomb_holder != username:
                 logger.debug(f"{username} tried to pass but is not the current holder (holder is: {self.current_bomb_holder})")
                 return
             
-            # Extract target username
-            match = re.match(r'pass @(\w+)', content, re.IGNORECASE)
+            # Extract target username (with or without @)
+            match = re.match(r'pass @?(\w+)', content, re.IGNORECASE)
             if not match:
                 logger.debug(f"Failed to parse pass command from: {content}")
                 return

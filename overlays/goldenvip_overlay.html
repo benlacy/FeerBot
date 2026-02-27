@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golden VIP Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            border-radius: 20px;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1520 0%, #2d1b2e 50%, #1a1520 100%);
+            border: 3px solid #ff69b4;
+            border-radius: 20px;
+            box-shadow:
+                0 0 20px rgba(255, 105, 180, 0.5),
+                inset 0 0 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #content {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timer-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .timer-display {
+            font-size: 72px;
+            font-weight: bold;
+            color: #ff69b4;
+            text-shadow:
+                0 0 15px rgba(255, 105, 180, 0.8),
+                0 0 30px rgba(255, 182, 193, 0.6);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 4px;
+            min-width: 180px;
+            text-align: center;
+        }
+
+        .timer-display.warning {
+            color: #ff1493;
+            animation: timerFlash 0.5s ease-in-out infinite;
+        }
+
+        @keyframes timerFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .diamond-icon {
+            width: 120px;
+            height: 120px;
+            font-size: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: diamondPulse 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(255, 105, 180, 0.9));
+            margin-bottom: 15px;
+        }
+
+        @keyframes diamondPulse {
+            0%, 100% {
+                transform: scale(1);
+                filter: drop-shadow(0 0 20px rgba(255, 105, 180, 0.9));
+            }
+            50% {
+                transform: scale(1.08);
+                filter: drop-shadow(0 0 35px rgba(255, 182, 193, 1));
+            }
+        }
+
+        .vip-label {
+            font-size: 36px;
+            font-weight: bold;
+            color: #ffb6c1;
+            text-shadow: 0 0 15px rgba(255, 182, 193, 0.8);
+            letter-spacing: 6px;
+            margin-bottom: 10px;
+        }
+
+        .username-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow:
+                0 0 15px rgba(255, 255, 255, 0.5),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+            text-align: center;
+            padding: 12px 24px;
+            background: rgba(255, 105, 180, 0.25);
+            border-radius: 12px;
+            border: 2px solid rgba(255, 182, 193, 0.5);
+        }
+
+        .help-text {
+            font-size: 32px;
+            font-weight: normal;
+            color: #e0c0d0;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            text-align: center;
+            margin-top: 20px;
+            font-style: italic;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .waiting {
+            font-size: 36px;
+            color: #888888;
+            font-style: italic;
+            text-align: center;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1520 0%, #2d1b2e 50%, #1a1520 100%);
+            border-radius: 20px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            z-index: 100;
+        }
+
+        .game-over:not(.hidden) {
+            display: flex;
+        }
+
+        .winner-diamond {
+            font-size: 120px;
+            animation: diamondPulse 1.5s ease-in-out infinite;
+            filter: drop-shadow(0 0 30px rgba(255, 105, 180, 1));
+        }
+
+        .winner-label {
+            font-size: 42px;
+            font-weight: bold;
+            color: #ffb6c1;
+            text-shadow: 0 0 15px rgba(255, 182, 193, 0.8);
+        }
+
+        .winner-name {
+            font-size: 56px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow:
+                0 0 20px rgba(255, 182, 193, 0.8),
+                0 4px 8px rgba(0, 0, 0, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="waiting" class="waiting">Waiting for Golden VIP to start...</div>
+
+        <div id="content" class="hidden">
+            <div class="timer-container">
+                <div class="diamond-icon">💎</div>
+                <div class="timer-display" id="timer-display">30.0</div>
+            </div>
+            <div class="vip-label">VIP</div>
+            <div class="username-display" id="username-display">No one</div>
+            <div class="help-text">Type "steal" to take the VIP</div>
+        </div>
+
+        <div id="game-over" class="game-over hidden">
+            <div class="winner-diamond">💎</div>
+            <div class="winner-label">VIP awarded to</div>
+            <div class="winner-name" id="winner-name">No one</div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+
+        let currentHolder = null;
+        let currentTimer = 30.0;
+        let lastTtsUsername = null;
+        let timerInterval = null;
+        let winnerScreenTimeout = null;
+
+        function formatTimer(seconds) {
+            const whole = Math.floor(seconds);
+            const tenths = Math.floor((seconds - whole) * 10);
+            return whole + '.' + tenths;
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        function updateDisplay(holder, timer) {
+            const content = document.getElementById('content');
+            const waiting = document.getElementById('waiting');
+            const usernameDisplay = document.getElementById('username-display');
+            const timerDisplay = document.getElementById('timer-display');
+            const gameOver = document.getElementById('game-over');
+
+            if (!content || !waiting) return;
+
+            if (gameOver && gameOver.classList.contains('hidden') === false) {
+                return;
+            }
+
+            if (holder !== undefined && holder !== null) {
+                waiting.classList.add('hidden');
+                waiting.style.display = 'none';
+                content.classList.remove('hidden');
+                content.style.display = 'flex';
+
+                if (usernameDisplay) usernameDisplay.textContent = holder;
+                if (timer !== undefined) {
+                    currentTimer = timer;
+                    if (timerDisplay) {
+                        timerDisplay.textContent = formatTimer(timer);
+                        timerDisplay.classList.toggle('warning', timer <= 10);
+                    }
+                }
+
+                if (holder !== lastTtsUsername) {
+                    speak(holder + ' has the VIP');
+                    lastTtsUsername = holder;
+                }
+            } else if (gameOver && !gameOver.classList.contains('hidden')) {
+                return;
+            } else {
+                content.classList.add('hidden');
+                content.style.display = 'none';
+                waiting.classList.remove('hidden');
+                waiting.style.display = '';
+                lastTtsUsername = null;
+                if (usernameDisplay) usernameDisplay.textContent = 'No one';
+                if (timerDisplay) timerDisplay.textContent = '30.0';
+            }
+        }
+
+        function startTimerUpdate() {
+            if (timerInterval) clearInterval(timerInterval);
+            if (!currentHolder) return;
+            timerInterval = setInterval(function() {
+                if (currentHolder && currentTimer > 0) {
+                    currentTimer = Math.max(0, currentTimer - 0.1);
+                    const timerDisplay = document.getElementById('timer-display');
+                    if (timerDisplay) {
+                        timerDisplay.textContent = formatTimer(currentTimer);
+                        timerDisplay.classList.toggle('warning', currentTimer <= 10);
+                    }
+                } else {
+                    if (timerInterval) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                    }
+                }
+            }, 100);
+        }
+
+        function showWinnerScreen(winner) {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            if (winnerScreenTimeout) {
+                clearTimeout(winnerScreenTimeout);
+            }
+            const content = document.getElementById('content');
+            const waiting = document.getElementById('waiting');
+            const gameOver = document.getElementById('game-over');
+            const winnerNameEl = document.getElementById('winner-name');
+            content.classList.add('hidden');
+            waiting.classList.add('hidden');
+            if (winnerNameEl) winnerNameEl.textContent = winner || 'No one';
+            gameOver.classList.remove('hidden');
+            gameOver.style.display = 'flex';
+            speak(winner + ' won VIP!');
+            winnerScreenTimeout = setTimeout(function() {
+                gameOver.classList.add('hidden');
+                gameOver.style.display = 'none';
+                waiting.classList.remove('hidden');
+                waiting.style.display = '';
+                currentHolder = null;
+                currentTimer = 30.0;
+                lastTtsUsername = null;
+            }, 6000);
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to Golden VIP overlay WebSocket');
+                    initializeDisplay();
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'vip_update') {
+                            currentHolder = data.holder || null;
+                            if (data.timer !== undefined) currentTimer = data.timer;
+                            updateDisplay(currentHolder, data.timer);
+                            startTimerUpdate();
+                        } else if (data.type === 'vip_reset') {
+                            if (winnerScreenTimeout) {
+                                clearTimeout(winnerScreenTimeout);
+                                winnerScreenTimeout = null;
+                            }
+                            const gameOver = document.getElementById('game-over');
+                            if (gameOver) {
+                                gameOver.classList.add('hidden');
+                                gameOver.style.display = 'none';
+                            }
+                            currentHolder = null;
+                            currentTimer = 30.0;
+                            if (timerInterval) {
+                                clearInterval(timerInterval);
+                                timerInterval = null;
+                            }
+                            updateDisplay(null);
+                        } else if (data.type === 'vip_winner') {
+                            showWinnerScreen(data.winner || 'No one');
+                        }
+                    } catch (e) {
+                        // Ignore non-JSON or other bots' messages
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket closed. Reconnecting...');
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    if (ws) ws.close();
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        function initializeDisplay() {
+            const waiting = document.getElementById('waiting');
+            const content = document.getElementById('content');
+
+            if (!waiting || !content) return;
+
+            waiting.classList.remove('hidden');
+            content.classList.add('hidden');
+            waiting.style.display = '';
+            content.style.display = 'none';
+
+            currentHolder = null;
+        }
+
+        initializeDisplay();
+        connectWebSocket();
+
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (winnerScreenTimeout) clearTimeout(winnerScreenTimeout);
+            if (timerInterval) clearInterval(timerInterval);
+            if (ws) ws.close();
+        });
+    </script>
+</body>
+</html>
