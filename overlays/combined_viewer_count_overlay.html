@@ -1,4 +1,12 @@
 <!DOCTYPE html>
+<!--
+  WebSocket URL resolution:
+  1) ?overlay_ws=... (highest priority) — for one-off overrides
+  2) combined_viewer_count_overlay.config.js — run from repo root:
+       python scripts/generate_combined_viewer_overlay_config.py
+     (reads COMBINED_VIEWER_OVERLAY_WS_URL from .env; file is gitignored)
+  3) Default: ws://127.0.0.1:6790 (local server.py + OBS on one PC)
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -75,7 +83,45 @@
     </div>
 
     <script>
-        const wsUrl = 'ws://localhost:6790';
+        window.__COMBINED_VIEWER_OVERLAY_WS_URL__ = '';
+    </script>
+    <script src="combined_viewer_count_overlay.config.js"></script>
+    <script>
+        const DEFAULT_LOCAL_WS = 'ws://127.0.0.1:6790';
+
+        function validateWsUrl(raw) {
+            try {
+                const u = new URL(raw);
+                if (u.protocol !== 'ws:' && u.protocol !== 'wss:') {
+                    console.error('WebSocket URL must use ws: or wss: — got', u.protocol);
+                    return null;
+                }
+                return u.href;
+            } catch (e) {
+                console.error('Invalid WebSocket URL', e);
+                return null;
+            }
+        }
+
+        function resolveWebSocketUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const queryOverride = params.get('overlay_ws');
+            if (queryOverride) {
+                const v = validateWsUrl(queryOverride);
+                if (v) return v;
+            }
+            const fromEnv =
+                typeof window.__COMBINED_VIEWER_OVERLAY_WS_URL__ === 'string'
+                    ? window.__COMBINED_VIEWER_OVERLAY_WS_URL__.trim()
+                    : '';
+            if (fromEnv) {
+                const v = validateWsUrl(fromEnv);
+                if (v) return v;
+            }
+            return DEFAULT_LOCAL_WS;
+        }
+
+        const wsUrl = resolveWebSocketUrl();
         let ws = null;
         let reconnectTimeout = null;
         let reconnectDelay = 1000; // Start with 1 second, will increase on failures

@@ -1,8 +1,16 @@
 import asyncio
+import os
+import ssl
 import websockets
 import logging
-from datetime import datetime
-from typing import Set, Any
+from typing import Set, Any, Optional
+
+# Bind address: use 0.0.0.0 on a VPS so remote clients can connect; 127.0.0.1 for local-only.
+WS_BIND_HOST = os.getenv("WS_BIND_HOST", "127.0.0.1")
+WS_PORT = int(os.getenv("WS_PORT", "6790"))
+# Optional TLS (wss://) — set both to PEM paths, e.g. Let's Encrypt fullchain.pem + privkey.pem
+WS_SSL_CERTFILE = os.getenv("WS_SSL_CERTFILE", "").strip() or None
+WS_SSL_KEYFILE = os.getenv("WS_SSL_KEYFILE", "").strip() or None
 
 # Configure logging
 logging.basicConfig(
@@ -63,13 +71,24 @@ async def send_message(ws: Any, message: str) -> None:
     except Exception as e:
         logger.error(f"Error sending message to client {id(ws)}: {str(e)}")
 
+def _server_ssl_context() -> Optional[ssl.SSLContext]:
+    if not WS_SSL_CERTFILE or not WS_SSL_KEYFILE:
+        return None
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(WS_SSL_CERTFILE, WS_SSL_KEYFILE)
+    return ctx
+
+
 async def main() -> None:
     """Main function to start the WebSocket server."""
     try:
+        ssl_ctx = _server_ssl_context()
+        scheme = "wss" if ssl_ctx else "ws"
         async with websockets.serve(
             handler,
-            "localhost",
-            6790,
+            WS_BIND_HOST,
+            WS_PORT,
+            ssl=ssl_ctx,
             ping_interval=20,  # Keep connections alive
             ping_timeout=20,
             close_timeout=10,
@@ -77,7 +96,16 @@ async def main() -> None:
             max_queue=32,    # Max number of messages in queue
             compression=None  # Disable compression for simplicity
         ) as server:
-            logger.info("WebSocket server started on ws://localhost:6790")
+            logger.info(
+                f"WebSocket server started on {scheme}://{WS_BIND_HOST}:{WS_PORT}"
+            )
+            if ssl_ctx:
+                logger.info("TLS enabled (WS_SSL_CERTFILE / WS_SSL_KEYFILE)")
+            else:
+                logger.info(
+                    "Plain WebSocket (set WS_SSL_CERTFILE + WS_SSL_KEYFILE for wss, "
+                    "or terminate TLS with nginx/Caddy in front)"
+                )
             logger.info("Waiting for connections...")
             await asyncio.Future()  # run forever
     except Exception as e:

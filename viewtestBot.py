@@ -1,19 +1,34 @@
 from baseBot import BaseBot
 from dotenv import load_dotenv
+from typing import Optional
 import logging
 import asyncio
 import aiohttp
+import os
 
 logger = logging.getLogger(__name__)
 
+# WebSocket URL for overlay fan-out server (server.py on same host or remote).
+# Set in .env on the VPS, e.g. OVERLAY_WS_URL=ws://127.0.0.1:6790 (same machine)
+# or wss://overlay.example.com when using TLS (nginx or direct WS_SSL_* on server.py).
+DEFAULT_OVERLAY_WS_URL = "ws://127.0.0.1:6790"
+
+
 class ViewTestBot(BaseBot):
-    def __init__(self, stream_name: str = "Feer", youtube_channel_id: str = "Feer", overlay_ws_url: str = "ws://localhost:6790"):
+    def __init__(
+        self,
+        stream_name: str = "Feer",
+        youtube_channel_id: str = "Feer",
+        overlay_ws_url: Optional[str] = None,
+    ):
+        resolved = overlay_ws_url or os.getenv("OVERLAY_WS_URL", DEFAULT_OVERLAY_WS_URL)
         super().__init__(
-            overlay_ws_url=overlay_ws_url,
+            overlay_ws_url=resolved,
             prefix='!',
             channel_name=stream_name,
             require_client_id=False
         )
+        logger.info(f"ViewTestBot overlay WebSocket: {resolved}")
         self.stream_name = stream_name
         self.youtube_channel_id = youtube_channel_id
         self.viewer_count_task = None
@@ -136,5 +151,7 @@ class ViewTestBot(BaseBot):
 
 if __name__ == "__main__":
     load_dotenv()
-    bot = ViewTestBot(stream_name="Feer", youtube_channel_id="Feer")
+    stream = os.getenv("VIEWTEST_STREAM_NAME", "Feer")
+    yt = os.getenv("VIEWTEST_YOUTUBE_CHANNEL", "Feer")
+    bot = ViewTestBot(stream_name=stream, youtube_channel_id=yt)
     bot.run()

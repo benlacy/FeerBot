@@ -129,6 +129,8 @@ celerybeat.pid
 
 # Environments
 .env
+# Generated from .env (contains public WS URL); do not commit
+overlays/combined_viewer_count_overlay.config.js
 .venv
 env/
 venv/

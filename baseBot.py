@@ -1,4 +1,5 @@
 import os
+import ssl
 import asyncio
 import websockets
 import logging
@@ -11,7 +12,6 @@ import aiohttp
 import json
 from datetime import datetime, timezone
 import tempfile
-import playsound
 import requests
 from gtts import gTTS
 import time
@@ -285,10 +285,30 @@ class BaseBot(commands.Bot):
         #         retry_delay = min(retry_delay * 2, max_delay)
         #         logger.info(f"Reconnecting in {retry_delay} seconds...")
         #         await asyncio.sleep(retry_delay)
+        def _overlay_connect_kwargs() -> dict:
+            """Extra kwargs for wss:// (optional verify skip for self-signed dev only)."""
+            if not self.overlay_ws_url.startswith("wss://"):
+                return {}
+            verify = os.getenv("OVERLAY_WS_SSL_VERIFY", "1").lower() not in (
+                "0", "false", "no",
+            )
+            if verify:
+                return {}
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            logger.warning(
+                "OVERLAY_WS_SSL_VERIFY disabled — only for dev/self-signed certs"
+            )
+            return {"ssl": ctx}
+
         while True:
             logger.info("Attempting to connect to WebSocket server...")
             try:
-                async with websockets.connect(self.overlay_ws_url) as websocket:
+                async with websockets.connect(
+                    self.overlay_ws_url,
+                    **_overlay_connect_kwargs(),
+                ) as websocket:
                     logger.info("Connected to WebSocket server")
                     self.ws = websocket
                     await self.upon_connection()
@@ -984,7 +1004,17 @@ class BaseBot(commands.Bot):
 
     async def upon_connection(self):
         # Child classes should implement
-        pass 
+        pass
+
+    def _playsound_file(self, path: str) -> None:
+        """Lazy import so bots that never play audio (e.g. ViewTestBot on a server) skip playsound."""
+        try:
+            import playsound as _playsound
+        except ImportError as e:
+            raise ImportError(
+                "playsound is required for speak/speakMonster. pip install playsound"
+            ) from e
+        _playsound.playsound(path)
 
     async def speak(self, message: str, voice_id: Optional[str] = None):
         """
@@ -1000,7 +1030,7 @@ class BaseBot(commands.Bot):
                 temp_path = fp.name
                 tts.save(temp_path)
             try:
-                playsound.playsound(temp_path)
+                self._playsound_file(temp_path)
             finally:
                 os.unlink(temp_path)
         except Exception as e:
@@ -1052,7 +1082,7 @@ class BaseBot(commands.Bot):
                         
                         # Play the audio
                         try:
-                            playsound.playsound(temp_path)
+                            self._playsound_file(temp_path)
                         finally:
                             os.unlink(temp_path)
                     else:
