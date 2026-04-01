@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rocket League Advice Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        .advice-container {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 40px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .advice-box {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            max-width: 95%;
+            justify-content: flex-start;
+        }
+
+        .advice-content {
+            display: flex;
+            align-items: center;
+            color: #ffffff;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 
+                0 0 4px rgba(0, 0, 0, 0.8),
+                0 0 8px rgba(0, 0, 0, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9),
+                -2px -2px 4px rgba(0, 0, 0, 0.9),
+                2px -2px 4px rgba(0, 0, 0, 0.9),
+                -2px 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        .message {
+            color: #ffffff;
+            word-wrap: break-word;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="advice-container hidden" id="advice-container">
+        <div class="advice-box">
+            <div class="advice-content">
+                <span class="message" id="advice-message"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const adviceContainer = document.getElementById('advice-container');
+        const adviceMessage = document.getElementById('advice-message');
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+        
+        let audioContext = null;
+        
+        async function initializeAudioContext() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+            } catch (e) {
+                console.error('Error initializing audio context:', e);
+            }
+        }
+        
+        initializeAudioContext();
+        
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('Connected to advice overlay WebSocket');
+                    initializeAudioContext();
+                };
+                
+                ws.onmessage = async (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'advice') {
+                            adviceMessage.textContent = data.message || '';
+                            adviceContainer.classList.remove('hidden');
+                            
+                            let fallbackTimeout = null;
+                            
+                            if (data.audio_data_url) {
+                                const audio = await playAudioFromDataUrl(data.audio_data_url);
+                                
+                                if (audio) {
+                                    audio.addEventListener('ended', () => {
+                                        if (fallbackTimeout) {
+                                            clearTimeout(fallbackTimeout);
+                                            fallbackTimeout = null;
+                                        }
+                                        adviceContainer.classList.add('hidden');
+                                    });
+                                    
+                                    const wordCount = (data.message || '').split(/\s+/).length;
+                                    const estimatedDuration = Math.max(5000, (wordCount / 150) * 60 * 1000 * 2);
+                                    
+                                    fallbackTimeout = setTimeout(() => {
+                                        fallbackTimeout = null;
+                                        adviceContainer.classList.add('hidden');
+                                    }, estimatedDuration);
+                                } else {
+                                    const wordCount = (data.message || '').split(/\s+/).length;
+                                    const duration = Math.max(3000, (wordCount / 150) * 60 * 1000);
+                                    fallbackTimeout = setTimeout(() => {
+                                        adviceContainer.classList.add('hidden');
+                                    }, duration);
+                                }
+                            } else {
+                                const wordCount = (data.message || '').split(/\s+/).length;
+                                const duration = Math.max(3000, (wordCount / 150) * 60 * 1000);
+                                fallbackTimeout = setTimeout(() => {
+                                    adviceContainer.classList.add('hidden');
+                                }, duration);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Invalid message:', event.data);
+                    }
+                };
+                
+                ws.onerror = (err) => console.error('WebSocket error:', err);
+                
+                ws.onclose = () => {
+                    reconnectTimeout = setTimeout(connectWebSocket, 3000);
+                };
+            } catch (error) {
+                reconnectTimeout = setTimeout(connectWebSocket, 3000);
+            }
+        }
+        
+        async function playAudioFromDataUrl(audioDataUrl) {
+            try {
+                await initializeAudioContext();
+                
+                try {
+                    const base64Data = audioDataUrl.split(',')[1];
+                    const binaryString = atob(base64Data);
+                    const arrayBuffer = new ArrayBuffer(binaryString.length);
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        uint8Array[i] = binaryString.charCodeAt(i);
+                    }
+                    
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(audioContext.destination);
+                    
+                    let endedCallback = null;
+                    const audioDuration = audioBuffer.duration * 1000;
+                    
+                    source.addEventListener('ended', () => {
+                        if (endedCallback) endedCallback();
+                    });
+                    
+                    source.start(0);
+                    
+                    return {
+                        addEventListener: (event, callback) => {
+                            if (event === 'ended') endedCallback = callback;
+                        },
+                        duration: audioDuration
+                    };
+                } catch (webAudioError) {
+                    const audio = new Audio(audioDataUrl);
+                    audio.volume = 1.0;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        await audioContext.resume();
+                    }
+                    await audio.play();
+                    return audio;
+                }
+            } catch (e) {
+                console.error('Error playing audio:', e);
+            }
+            return null;
+        }
+
+        connectWebSocket();
+    </script>
+</body>
+</html>

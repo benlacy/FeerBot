@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milkathon Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            width: 1920px;
+            height: 1080px;
+            position: relative;
+        }
+
+        /* Countdown timer - top center */
+        .timer-container {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 25;
+        }
+
+        .timer-display {
+            font-size: 72px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow:
+                0 0 20px rgba(255, 255, 255, 0.5),
+                0 4px 12px rgba(0, 0, 0, 0.9);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 4px;
+        }
+
+        .timer-display.urgent {
+            color: #ef4444;
+            text-shadow:
+                0 0 20px rgba(239, 68, 68, 0.8),
+                0 4px 12px rgba(0, 0, 0, 0.9);
+        }
+
+        .timer-subtitle {
+            font-size: 18px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.8);
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+            margin-top: 8px;
+        }
+
+        /* Next goal - bold text at middle bottom */
+        .next-goal-container {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 20;
+        }
+
+        .next-goal-label {
+            font-size: 28px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .next-goal-text {
+            font-size: 56px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow:
+                0 0 20px rgba(255, 255, 255, 0.5),
+                0 4px 12px rgba(0, 0, 0, 0.9);
+            margin-bottom: 12px;
+        }
+
+        .next-goal-subs {
+            font-size: 36px;
+            font-weight: 600;
+            color: #ffd93d;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Achieved goals - right side */
+        .achieved-container {
+            position: absolute;
+            top: 60px;
+            right: 20px;
+            width: 480px;
+            height: 900px;
+            overflow: hidden;
+            z-index: 15;
+            text-align: right;
+        }
+
+        .achieved-title {
+            font-size: 28px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.95);
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .achieved-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-end;
+        }
+
+        .achieved-item {
+            font-size: inherit;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.95);
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+        }
+
+        .waiting {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform: translate(-50%, 50%);
+            font-size: 32px;
+            color: rgba(255, 255, 255, 0.6);
+            font-style: italic;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .all-done .next-goal-text {
+            font-size: 42px;
+            color: #86efac;
+        }
+    </style>
+</head>
+<body>
+    <div id="waiting" class="waiting">Waiting for milkathon data...</div>
+
+    <div id="content" class="hidden">
+        <div class="timer-container">
+            <div class="timer-display" id="timer-display">Stream ends: 5:00</div>
+            <div class="timer-subtitle">ANY sub event resets timer. No scaling</div>
+        </div>
+
+        <div class="next-goal-container">
+            <div class="next-goal-label">Next goal</div>
+            <div class="next-goal-text" id="next-goal-text">—</div>
+            <div class="next-goal-subs" id="next-goal-subs">—</div>
+        </div>
+
+        <div class="achieved-container">
+            <div class="achieved-title">Achieved</div>
+            <div class="achieved-list" id="achieved-list"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectTimeout = null;
+        const wsUrl = 'ws://localhost:6790';
+
+        let nextGoal = null;
+        let totalSubs = 0;
+        let subsRequired = null;
+        let achievedGoals = [];  // [{subs: number, text: string}, ...]
+        let timerSeconds = 300;
+        let countdownInterval = null;
+
+        function formatTime(seconds) {
+            const s = Math.max(0, Math.floor(seconds));
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return String(m) + ':' + String(sec).padStart(2, '0');
+        }
+
+        function updateTimerDisplay() {
+            const el = document.getElementById('timer-display');
+            el.textContent = 'Stream ends: ' + formatTime(timerSeconds);
+            el.classList.toggle('urgent', timerSeconds > 0 && timerSeconds <= 60);
+        }
+
+        function startCountdown() {
+            if (countdownInterval) clearInterval(countdownInterval);
+            updateTimerDisplay();
+            countdownInterval = setInterval(() => {
+                if (timerSeconds > 0) timerSeconds -= 1;
+                updateTimerDisplay();
+            }, 1000);
+        }
+
+        function updateDisplay() {
+            const textEl = document.getElementById('next-goal-text');
+            const subsEl = document.getElementById('next-goal-subs');
+            const container = document.querySelector('.next-goal-container');
+
+            if (nextGoal) {
+                textEl.textContent = nextGoal;
+                subsEl.textContent = 'Current subs: ' + totalSubs + ' Next Goal: ' + subsRequired;
+                subsEl.classList.remove('hidden');
+                container.classList.remove('all-done');
+            } else {
+                textEl.textContent = 'All goals achieved!';
+                subsEl.classList.add('hidden');
+                container.classList.add('all-done');
+            }
+
+            const listEl = document.getElementById('achieved-list');
+            listEl.innerHTML = '';
+            achievedGoals.forEach((goal) => {
+                const item = document.createElement('div');
+                item.className = 'achieved-item';
+                item.textContent = '(' + goal.subs + ') ' + goal.text;
+                listEl.appendChild(item);
+            });
+
+            // Scale font size to fit all items (no scrollbar) - start shrinking ~15 items so 20+ fit
+            const count = achievedGoals.length;
+            const availableHeight = 700;
+            const gap = 6;
+            const lineHeight = 1.2;
+            const fontSize = count > 0
+                ? Math.min(28, Math.max(10, (availableHeight - count * gap) / (count * lineHeight)))
+                : 28;
+            listEl.style.fontSize = fontSize + 'px';
+        }
+
+        function updateFromServer(data) {
+            if (data.next_goal !== undefined) nextGoal = data.next_goal;
+            if (data.total_subs !== undefined) totalSubs = data.total_subs;
+            if (data.subs_required !== undefined) subsRequired = data.subs_required;
+            if (data.achieved_goals) achievedGoals = data.achieved_goals;
+            if (data.timer_seconds !== undefined) {
+                timerSeconds = data.timer_seconds;
+                startCountdown();
+            }
+
+            updateDisplay();
+            document.getElementById('waiting').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        function connectWebSocket() {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            try {
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    console.log('Connected to Milkathon WebSocket');
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'milkathon_goals') {
+                            updateFromServer(data);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                };
+                ws.onclose = () => {
+                    console.log('WebSocket closed. Reconnecting...');
+                    reconnectTimeout = setTimeout(connectWebSocket, 1000);
+                };
+                ws.onerror = (err) => {
+                    console.error('WebSocket error:', err);
+                    ws.close();
+                };
+            } catch (err) {
+                console.error('Failed to create WebSocket:', err);
+                reconnectTimeout = setTimeout(connectWebSocket, 1000);
+            }
+        }
+
+        connectWebSocket();
+
+        window.addEventListener('unload', () => {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (ws) ws.close();
+        });
+    </script>
+</body>
+</html>
