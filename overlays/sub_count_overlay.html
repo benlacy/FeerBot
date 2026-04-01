@@ -43,10 +43,6 @@
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
             line-height: 1;
         }
-        .sub-behind {
-            color: #fca5a5;
-            font-size: 48px;
-        }
     </style>
 </head>
 <body>
@@ -54,13 +50,11 @@
         <img src="../assets/dsc_1439-4x.png" alt="Sub" class="sub-image" id="sub-image">
         <div class="sub-display">
             <span id="sub-count">0</span>
-            <span class="sub-behind" id="sub-behind"></span>
         </div>
     </div>
 
     <script>
         const subCountElement = document.getElementById('sub-count');
-        const subBehindElement = document.getElementById('sub-behind');
         const boxElement = document.getElementById('box');
         let ws = null;
         let reconnectTimeout = null;
@@ -68,16 +62,16 @@
         const wsUrl = 'ws://localhost:6790';
         let currentCount = 0;
         let currentBehind = 0;
+        let currentGoal = 7;
         let goalMet = false;
 
         function updateDisplay() {
-            subCountElement.textContent = currentCount.toLocaleString();
             if (goalMet || currentBehind === 0) {
-                subBehindElement.textContent = '';
+                subCountElement.textContent = currentCount.toLocaleString();
                 boxElement.classList.remove('goal-missed');
                 boxElement.classList.add('goal-met');
             } else {
-                subBehindElement.textContent = `(-${currentBehind})`;
+                subCountElement.textContent = `${currentCount.toLocaleString()}/${currentGoal.toLocaleString()}`;
                 boxElement.classList.remove('goal-met');
                 boxElement.classList.add('goal-missed');
             }
@@ -103,6 +97,7 @@
                         if (data.type === 'sub_count' && data.count !== undefined) {
                             currentCount = parseInt(data.count) || 0;
                             currentBehind = parseInt(data.behind) || 0;
+                            currentGoal = parseInt(data.goal) || 0;
                             goalMet = data.goal_met === true;
                             updateDisplay();
                         }
